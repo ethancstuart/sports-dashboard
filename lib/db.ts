@@ -1,18 +1,15 @@
-import { createClient } from "@libsql/client";
+import { Pool } from "@neondatabase/serverless";
 
-export const db = createClient({
-  url: process.env.TURSO_URL || "file:local.db",
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 export type Row = Record<string, unknown>;
 
-export async function query<T = Row>(sql: string, args: unknown[] = []): Promise<T[]> {
-  const result = await db.execute(sql, args as any[]); // eslint-disable-line @typescript-eslint/no-explicit-any
-  return result.rows as unknown as T[];
+export async function query<T = Row>(text: string, params: unknown[] = []): Promise<T[]> {
+  const { rows } = await pool.query(text, params);
+  return rows as T[];
 }
 
-export async function queryOne<T = Row>(sql: string, args: unknown[] = []): Promise<T | null> {
-  const rows = await query<T>(sql, args);
+export async function queryOne<T = Row>(text: string, params: unknown[] = []): Promise<T | null> {
+  const rows = await query<T>(text, params);
   return rows[0] ?? null;
 }

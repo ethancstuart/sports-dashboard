@@ -31,7 +31,7 @@ export async function getPicksByDate(date: string) {
     SELECT sp.*, g.home_team_id, g.away_team_id, g.home_score, g.away_score
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
-    WHERE sp.game_date = ?
+    WHERE sp.game_date = $1
     ORDER BY sp.strategy, sp.predicted_at
   `, [date]);
 }
@@ -42,7 +42,7 @@ export async function getResultsByDate(date: string) {
     SELECT sp.*, g.home_team_id, g.away_team_id, g.home_score, g.away_score
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
-    WHERE sp.game_date = ? AND sp.result IS NOT NULL
+    WHERE sp.game_date = $1 AND sp.result IS NOT NULL
     ORDER BY sp.strategy
   `, [date]);
 }
@@ -50,7 +50,8 @@ export async function getResultsByDate(date: string) {
 // ── P&L time series ──
 export async function getPnlTimeSeries(days: number = 90) {
   return query(`
-    SELECT game_date, SUM(pnl) as daily_pnl,
+    SELECT game_date,
+           SUM(pnl) as daily_pnl,
            SUM(SUM(pnl)) OVER (ORDER BY game_date) as cumulative_pnl,
            COUNT(*) as bets,
            SUM(CASE WHEN result='win' THEN 1 ELSE 0 END) as wins
@@ -58,7 +59,7 @@ export async function getPnlTimeSeries(days: number = 90) {
     WHERE result IS NOT NULL
     GROUP BY game_date
     ORDER BY game_date DESC
-    LIMIT ?
+    LIMIT $1
   `, [days]);
 }
 
@@ -86,7 +87,7 @@ export async function getStrategyDetail(name: string) {
     SELECT sp.*, g.home_team_id, g.away_team_id, g.home_score, g.away_score
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
-    WHERE sp.strategy = ?
+    WHERE sp.strategy = $1
     ORDER BY sp.game_date DESC
   `, [name]);
 }
@@ -106,23 +107,23 @@ export async function getOpenPositions() {
 // ── Prediction audit for a game ──
 export async function getGameAudit(gameId: string) {
   const picks = await query(`
-    SELECT * FROM strategy_picks WHERE game_id = ? ORDER BY strategy
+    SELECT * FROM strategy_picks WHERE game_id = $1 ORDER BY strategy
   `, [gameId]);
 
   const predictions = await query(`
-    SELECT * FROM predictions WHERE game_id = ?
+    SELECT * FROM predictions WHERE game_id = $1
   `, [gameId]);
 
   const subgame = await query(`
-    SELECT * FROM subgame_predictions WHERE game_id = ?
+    SELECT * FROM subgame_predictions WHERE game_id = $1
   `, [gameId]);
 
   const game = await queryOne(`
-    SELECT * FROM games WHERE game_id = ?
+    SELECT * FROM games WHERE game_id = $1
   `, [gameId]);
 
   const odds = await query(`
-    SELECT * FROM odds WHERE game_id = ?
+    SELECT * FROM odds WHERE game_id = $1
   `, [gameId]);
 
   return { game, picks, predictions, subgame, odds };
@@ -175,7 +176,7 @@ export async function getDataStats() {
 export async function getAlerts(limit: number = 50) {
   try {
     return await query(`
-      SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?
+      SELECT * FROM alerts ORDER BY created_at DESC LIMIT $1
     `, [limit]);
   } catch {
     return [];
