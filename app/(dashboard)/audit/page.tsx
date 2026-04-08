@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { DataTable, type Column } from "@/components/data-table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {

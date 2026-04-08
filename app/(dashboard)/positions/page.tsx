@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/metric-card";
 import { DataTable, type Column } from "@/components/data-table";
-import { fmtCurrency, fmtPct, fmtOdds, pnlColor } from "@/lib/format";
+import { fmtPct, fmtOdds, pnlColor } from "@/lib/format";
 
 // ── Types ──
 
