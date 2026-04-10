@@ -17,18 +17,19 @@ import { cn } from "@/lib/utils";
 /* ---------- types ---------- */
 
 interface TableStat {
-  table_name: string;
-  row_count: number;
+  table: string;
+  count: number;
 }
 
 interface SportFreshness {
   sport: string;
-  latest_game_date: string | null;
-  days_stale: number | null;
+  latest_game: string | null;
+  total_games: number;
+  completed: number;
 }
 
 interface DataStats {
-  tables: TableStat[];
+  stats: TableStat[];
   freshness: SportFreshness[];
 }
 
@@ -113,7 +114,7 @@ export default function DataObservatoryPage() {
   }, []);
 
   const totalRows =
-    stats?.tables.reduce((sum, t) => sum + t.row_count, 0) ?? 0;
+    stats?.stats.reduce((sum, t) => sum + t.count, 0) ?? 0;
 
   return (
     <div className="space-y-6">
@@ -142,15 +143,15 @@ export default function DataObservatoryPage() {
             <MetricCard
               label="Total Rows"
               value={fmtNumber(totalRows)}
-              subtext={`Across ${stats.tables.length} tables`}
+              subtext={`Across ${stats.stats.length} tables`}
             />
             <MetricCard
               label="Tables Tracked"
-              value={String(stats.tables.length)}
+              value={String(stats.stats.length)}
               subtext={
-                stats.tables.length === EXPECTED_TABLES.length
+                stats.stats.length === EXPECTED_TABLES.length
                   ? "All present"
-                  : `${EXPECTED_TABLES.length - stats.tables.length} missing`
+                  : `${EXPECTED_TABLES.length - stats.stats.length} missing`
               }
             />
           </div>
@@ -173,7 +174,7 @@ export default function DataObservatoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stats.tables.length === 0 ? (
+                  {stats.stats.length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={2}
@@ -183,15 +184,15 @@ export default function DataObservatoryPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    stats.tables
-                      .sort((a, b) => b.row_count - a.row_count)
+                    stats.stats
+                      .sort((a, b) => b.count - a.count)
                       .map((t) => (
-                        <TableRow key={t.table_name}>
+                        <TableRow key={t.table}>
                           <TableCell className="font-mono text-sm">
-                            {t.table_name}
+                            {t.table}
                           </TableCell>
                           <TableCell className="font-mono text-sm text-right">
-                            {fmtNumber(t.row_count)}
+                            {fmtNumber(t.count)}
                           </TableCell>
                         </TableRow>
                       ))
@@ -207,40 +208,56 @@ export default function DataObservatoryPage() {
               Data Freshness by Sport
             </h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {stats.freshness.map((f) => (
-                <Card key={f.sport}>
-                  <CardHeader className="pb-0">
-                    <CardTitle className="font-mono text-sm">
-                      {f.sport.toUpperCase()}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-2">
-                    <div className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Latest Game
-                        </span>
-                        <span className="font-mono">
-                          {f.latest_game_date ?? "—"}
-                        </span>
+              {stats.freshness.map((f) => {
+                const daysStale = f.latest_game
+                  ? Math.floor(
+                      (Date.now() - new Date(f.latest_game + "T00:00:00").getTime()) /
+                        86400000
+                    )
+                  : null;
+                return (
+                  <Card key={f.sport}>
+                    <CardHeader className="pb-0">
+                      <CardTitle className="font-mono text-sm">
+                        {f.sport.toUpperCase()}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Latest Game
+                          </span>
+                          <span className="font-mono">
+                            {f.latest_game ?? "—"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Freshness
+                          </span>
+                          <span
+                            className={cn(
+                              "font-mono font-semibold",
+                              freshnessColor(daysStale)
+                            )}
+                          >
+                            {freshnessLabel(daysStale)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Games
+                          </span>
+                          <span className="font-mono">
+                            {fmtNumber(f.completed)}/{fmtNumber(f.total_games)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Freshness
-                        </span>
-                        <span
-                          className={cn(
-                            "font-mono font-semibold",
-                            freshnessColor(f.days_stale)
-                          )}
-                        >
-                          {freshnessLabel(f.days_stale)}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
               {stats.freshness.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   No freshness data available

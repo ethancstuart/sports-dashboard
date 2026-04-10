@@ -3,59 +3,70 @@
 import { useEffect, useState } from "react";
 import { MetricCard } from "@/components/metric-card";
 import { DataTable, type Column } from "@/components/data-table";
-import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtUnits, fmtPct, fmtCurrency, fmtOdds, pnlColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/* ---------- types ---------- */
+/* ---------- types (match API response shapes) ---------- */
 
 interface Summary {
+  total_picks: number;
+  wins: number;
+  losses: number;
+  pushes: number;
   total_pnl: number;
-  roi: number;
-  win_rate: number;
   open_bets: number;
-  total_bets: number;
-  bankroll: number;
+  last_sync: string | null;
 }
 
 interface Pick {
+  game_id: string;
+  game_date: string;
   strategy: string;
   sport: string;
-  side: string;
+  bet_side: string;
   edge: number;
-  kelly: number;
+  kelly_size: number;
   book_odds: number;
-  model: string;
+  predicted_value: number;
+  home_team_id: string;
+  away_team_id: string;
+  result: string | null;
   [key: string]: unknown;
 }
 
 interface Result {
+  game_id: string;
   strategy: string;
   sport: string;
-  side: string;
+  bet_side: string;
   result: string;
   pnl: number;
   clv: number;
+  home_team_id: string;
+  away_team_id: string;
+  home_score: number | null;
+  away_score: number | null;
   [key: string]: unknown;
 }
 
 interface Strategy {
-  name: string;
+  strategy: string;
   sport: string;
-  win_rate: number;
-  backtest_win_rate: number;
-  total_picks: number;
-  pnl: number;
+  total: number;
+  wins: number;
+  losses: number;
+  total_pnl: number;
+  avg_clv: number | null;
+  avg_edge: number | null;
   [key: string]: unknown;
 }
 
 /* ---------- helpers ---------- */
 
 function today(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
 }
 
 function yesterday(): string {
@@ -64,41 +75,81 @@ function yesterday(): string {
   return d.toISOString().slice(0, 10);
 }
 
-function deriveStatus(s: Strategy): string {
-  if (s.win_rate >= s.backtest_win_rate) return "LIVE";
-  return "MONITOR";
-}
-
 const BANKROLL_BASE = 200;
 
 /* ---------- column defs ---------- */
 
 const pickColumns: Column<Pick>[] = [
+  {
+    key: "game",
+    header: "Game",
+    render: (r) => (
+      <span className="whitespace-nowrap font-semibold">
+        {r.away_team_id ?? "?"} @ {r.home_team_id ?? "?"}
+      </span>
+    ),
+  },
+  {
+    key: "sport",
+    header: "Sport",
+    render: (r) => (
+      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
+        {r.sport}
+      </span>
+    ),
+  },
   { key: "strategy", header: "Strategy" },
-  { key: "sport", header: "Sport" },
-  { key: "side", header: "Side" },
+  {
+    key: "bet_side",
+    header: "Side",
+    render: (r) => (
+      <span className="font-semibold uppercase">{r.bet_side ?? "—"}</span>
+    ),
+  },
   {
     key: "edge",
     header: "Edge%",
-    render: (r) => fmtPct(r.edge),
+    render: (r) => (
+      <span className={pnlColor(r.edge)}>{fmtPct(r.edge)}</span>
+    ),
   },
   {
-    key: "kelly",
+    key: "kelly_size",
     header: "Kelly%",
-    render: (r) => fmtPct(r.kelly),
+    render: (r) => fmtPct(r.kelly_size),
   },
   {
     key: "book_odds",
-    header: "Book Odds",
+    header: "Odds",
     render: (r) => fmtOdds(r.book_odds),
   },
-  { key: "model", header: "Model" },
 ];
 
 const resultColumns: Column<Result>[] = [
+  {
+    key: "game",
+    header: "Game",
+    render: (r) => (
+      <div>
+        <span className="whitespace-nowrap font-semibold">
+          {r.away_team_id ?? "?"} @ {r.home_team_id ?? "?"}
+        </span>
+        {r.home_score != null && (
+          <span className="ml-2 text-xs text-muted-foreground">
+            {r.away_score}-{r.home_score}
+          </span>
+        )}
+      </div>
+    ),
+  },
   { key: "strategy", header: "Strategy" },
-  { key: "sport", header: "Sport" },
-  { key: "side", header: "Side" },
+  {
+    key: "bet_side",
+    header: "Side",
+    render: (r) => (
+      <span className="font-semibold uppercase">{r.bet_side ?? "—"}</span>
+    ),
+  },
   {
     key: "result",
     header: "Result",
@@ -108,10 +159,12 @@ const resultColumns: Column<Result>[] = [
           "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
           r.result === "win"
             ? "bg-[var(--win)]/20 text-[var(--win)]"
-            : "bg-[var(--loss)]/20 text-[var(--loss)]"
+            : r.result === "loss"
+              ? "bg-[var(--loss)]/20 text-[var(--loss)]"
+              : "bg-muted text-muted-foreground"
         )}
       >
-        {r.result.toUpperCase()}
+        {r.result?.toUpperCase() ?? "PENDING"}
       </span>
     ),
   },
@@ -156,22 +209,6 @@ function TableSkeleton() {
   );
 }
 
-function GridSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {Array.from({ length: 14 }).map((_, i) => (
-        <Card key={i}>
-          <CardContent className="p-4">
-            <Skeleton className="mb-2 h-4 w-20" />
-            <Skeleton className="mb-1 h-3 w-16" />
-            <Skeleton className="h-3 w-24" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 /* ---------- page ---------- */
 
 export default function CommandCenter() {
@@ -202,6 +239,12 @@ export default function CommandCenter() {
     load();
   }, []);
 
+  // Compute derived metrics from the actual API response
+  const totalSettled = (summary?.wins ?? 0) + (summary?.losses ?? 0) + (summary?.pushes ?? 0);
+  const winRate = totalSettled > 0 ? (summary?.wins ?? 0) / totalSettled : null;
+  const roi = totalSettled > 0 ? (summary?.total_pnl ?? 0) / totalSettled : null;
+  const bankroll = BANKROLL_BASE + (summary?.total_pnl ?? 0);
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -211,6 +254,11 @@ export default function CommandCenter() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Portfolio overview &middot; {today()}
+          {summary?.last_sync && (
+            <span className="ml-3">
+              Synced: {new Date(summary.last_sync).toLocaleString()}
+            </span>
+          )}
         </p>
       </div>
 
@@ -226,24 +274,25 @@ export default function CommandCenter() {
           />
           <MetricCard
             label="ROI"
-            value={fmtPct(summary.roi)}
-            className={pnlColor(summary.roi)}
+            value={roi != null ? fmtPct(roi) : "—"}
+            className={pnlColor(roi)}
           />
           <MetricCard
             label="Win Rate"
-            value={fmtPct(summary.win_rate)}
+            value={winRate != null ? fmtPct(winRate) : "—"}
           />
           <MetricCard
             label="Open Bets"
             value={String(summary.open_bets)}
           />
           <MetricCard
-            label="Total Bets"
-            value={String(summary.total_bets)}
+            label="Settled Bets"
+            value={String(totalSettled)}
+            subtext={`${summary.wins}W / ${summary.losses}L`}
           />
           <MetricCard
             label="Bankroll"
-            value={fmtCurrency(summary.bankroll ?? BANKROLL_BASE)}
+            value={fmtCurrency(bankroll)}
             subtext={`Base: ${fmtCurrency(BANKROLL_BASE)}`}
           />
         </div>
@@ -253,6 +302,7 @@ export default function CommandCenter() {
       <section className="space-y-3">
         <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Today&apos;s Picks &middot; {today()}
+          {picks && <span className="ml-2 text-xs">({picks.length} bets)</span>}
         </h2>
         {picks === null ? (
           <TableSkeleton />
@@ -269,6 +319,7 @@ export default function CommandCenter() {
       <section className="space-y-3">
         <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Yesterday&apos;s Results &middot; {yesterday()}
+          {results && <span className="ml-2 text-xs">({results.length} settled)</span>}
         </h2>
         {results === null ? (
           <TableSkeleton />
@@ -281,42 +332,43 @@ export default function CommandCenter() {
         )}
       </section>
 
-      {/* Strategy Status Grid */}
+      {/* Strategy Performance */}
       <section className="space-y-3">
         <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Strategy Status
+          Strategy Performance
         </h2>
         {strategies === null ? (
-          <GridSkeleton />
+          <TableSkeleton />
+        ) : strategies.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No settled bets yet</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {strategies.map((s) => {
-              const status = deriveStatus(s);
+              const wr = s.total > 0 ? s.wins / s.total : 0;
               return (
-                <Card key={s.name}>
+                <Card key={s.strategy}>
                   <CardHeader className="pb-0">
                     <div className="flex items-center justify-between">
                       <CardTitle className="truncate font-mono text-sm">
-                        {s.name}
+                        {s.strategy}
                       </CardTitle>
-                      <StatusBadge status={status} />
+                      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
+                        {s.sport}
+                      </span>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-2">
-                    <span className="mr-2 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-                      {s.sport}
-                    </span>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                    <div className="mt-1 grid grid-cols-4 gap-2 text-xs">
                       <div>
-                        <div className="text-muted-foreground">Win%</div>
+                        <div className="text-muted-foreground">Record</div>
                         <div className="font-mono font-semibold">
-                          {fmtPct(s.win_rate)}
+                          {s.wins}-{s.losses}
                         </div>
                       </div>
                       <div>
-                        <div className="text-muted-foreground">Picks</div>
+                        <div className="text-muted-foreground">Win%</div>
                         <div className="font-mono font-semibold">
-                          {s.total_picks}
+                          {fmtPct(wr)}
                         </div>
                       </div>
                       <div>
@@ -324,10 +376,16 @@ export default function CommandCenter() {
                         <div
                           className={cn(
                             "font-mono font-semibold",
-                            pnlColor(s.pnl)
+                            pnlColor(s.total_pnl)
                           )}
                         >
-                          {fmtUnits(s.pnl)}
+                          {fmtUnits(s.total_pnl)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Avg Edge</div>
+                        <div className="font-mono font-semibold">
+                          {fmtPct(s.avg_edge)}
                         </div>
                       </div>
                     </div>
