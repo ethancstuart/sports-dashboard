@@ -60,7 +60,7 @@ export function Sidebar() {
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
           <div className="font-mono text-lg font-bold text-[var(--primary)]">
-            SPORTS ML
+            EDGEWATCH
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="border-t border-sidebar-border p-4">
           <div className="text-xs text-muted-foreground">
-            Sports ML Pipeline v1.0
+            EdgeWatch v2.0
           </div>
         </div>
       </aside>

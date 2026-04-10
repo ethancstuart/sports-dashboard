@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getPicksByDate } from "@/lib/queries";
+import { getActionablePicks } from "@/lib/queries";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-    const picks = await getPicksByDate(date);
+    const picks = await getActionablePicks(date);
     return NextResponse.json(picks);
   } catch (error) {
     console.error("GET /api/picks error:", error);

@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MetricCard } from "@/components/metric-card";
-import { DataTable, type Column } from "@/components/data-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fmtUnits, fmtPct, fmtCurrency, fmtOdds, pnlColor } from "@/lib/format";
+import {
+  fmtUnits,
+  fmtPct,
+  fmtCurrency,
+  fmtOdds,
+  pnlColor,
+  formatBet,
+  strategySort,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/* ---------- types (match API response shapes) ---------- */
+/* ---------- types ---------- */
 
 interface Summary {
   total_picks: number;
@@ -33,17 +39,19 @@ interface Pick {
   home_team_id: string;
   away_team_id: string;
   result: string | null;
+  tier: string;
   [key: string]: unknown;
 }
 
-interface Result {
+interface Settlement {
   game_id: string;
+  game_date: string;
   strategy: string;
   sport: string;
   bet_side: string;
   result: string;
   pnl: number;
-  clv: number;
+  clv: number | null;
   home_team_id: string;
   away_team_id: string;
   home_score: number | null;
@@ -69,333 +77,335 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function yesterday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
 const BANKROLL_BASE = 200;
-
-/* ---------- column defs ---------- */
-
-const pickColumns: Column<Pick>[] = [
-  {
-    key: "game",
-    header: "Game",
-    render: (r) => (
-      <span className="whitespace-nowrap font-semibold">
-        {r.away_team_id ?? "?"} @ {r.home_team_id ?? "?"}
-      </span>
-    ),
-  },
-  {
-    key: "sport",
-    header: "Sport",
-    render: (r) => (
-      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-        {r.sport}
-      </span>
-    ),
-  },
-  { key: "strategy", header: "Strategy" },
-  {
-    key: "bet_side",
-    header: "Side",
-    render: (r) => (
-      <span className="font-semibold uppercase">{r.bet_side ?? "—"}</span>
-    ),
-  },
-  {
-    key: "edge",
-    header: "Edge%",
-    render: (r) => (
-      <span className={pnlColor(r.edge)}>{fmtPct(r.edge)}</span>
-    ),
-  },
-  {
-    key: "kelly_size",
-    header: "Kelly%",
-    render: (r) => fmtPct(r.kelly_size),
-  },
-  {
-    key: "book_odds",
-    header: "Odds",
-    render: (r) => fmtOdds(r.book_odds),
-  },
-];
-
-const resultColumns: Column<Result>[] = [
-  {
-    key: "game",
-    header: "Game",
-    render: (r) => (
-      <div>
-        <span className="whitespace-nowrap font-semibold">
-          {r.away_team_id ?? "?"} @ {r.home_team_id ?? "?"}
-        </span>
-        {r.home_score != null && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            {r.away_score}-{r.home_score}
-          </span>
-        )}
-      </div>
-    ),
-  },
-  { key: "strategy", header: "Strategy" },
-  {
-    key: "bet_side",
-    header: "Side",
-    render: (r) => (
-      <span className="font-semibold uppercase">{r.bet_side ?? "—"}</span>
-    ),
-  },
-  {
-    key: "result",
-    header: "Result",
-    render: (r) => (
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
-          r.result === "win"
-            ? "bg-[var(--win)]/20 text-[var(--win)]"
-            : r.result === "loss"
-              ? "bg-[var(--loss)]/20 text-[var(--loss)]"
-              : "bg-muted text-muted-foreground"
-        )}
-      >
-        {r.result?.toUpperCase() ?? "PENDING"}
-      </span>
-    ),
-  },
-  {
-    key: "pnl",
-    header: "P&L",
-    render: (r) => (
-      <span className={pnlColor(r.pnl)}>{fmtUnits(r.pnl)}</span>
-    ),
-  },
-  {
-    key: "clv",
-    header: "CLV",
-    render: (r) => fmtPct(r.clv),
-  },
-];
-
-/* ---------- skeleton loaders ---------- */
-
-function MetricsSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Card key={i}>
-          <CardContent className="p-4">
-            <Skeleton className="mb-2 h-3 w-16" />
-            <Skeleton className="h-8 w-24" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function TableSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-10 w-full" />
-      ))}
-    </div>
-  );
-}
 
 /* ---------- page ---------- */
 
 export default function CommandCenter() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [picks, setPicks] = useState<Pick[] | null>(null);
-  const [results, setResults] = useState<Result[] | null>(null);
+  const [settlements, setSettlements] = useState<Settlement[] | null>(null);
   const [strategies, setStrategies] = useState<Strategy[] | null>(null);
 
   useEffect(() => {
     async function load() {
-      const [sumRes, picksRes, resultsRes, stratRes] = await Promise.all([
+      const [sumRes, picksRes, settleRes, stratRes] = await Promise.all([
         fetch("/api/summary"),
         fetch(`/api/picks?date=${today()}`),
-        fetch(`/api/results?date=${yesterday()}`),
+        fetch("/api/settlements"),
         fetch("/api/strategies"),
       ]);
-      const [sumData, picksData, resultsData, stratData] = await Promise.all([
+      const [sumData, picksData, settleData, stratData] = await Promise.all([
         sumRes.json(),
         picksRes.json(),
-        resultsRes.json(),
+        settleRes.json(),
         stratRes.json(),
       ]);
       setSummary(sumData);
       setPicks(picksData);
-      setResults(resultsData);
+      setSettlements(settleData);
       setStrategies(stratData);
     }
     load();
   }, []);
 
-  // Compute derived metrics from the actual API response
-  const totalSettled = (summary?.wins ?? 0) + (summary?.losses ?? 0) + (summary?.pushes ?? 0);
-  const winRate = totalSettled > 0 ? (summary?.wins ?? 0) / totalSettled : null;
-  const roi = totalSettled > 0 ? (summary?.total_pnl ?? 0) / totalSettled : null;
-  const bankroll = BANKROLL_BASE + (summary?.total_pnl ?? 0);
+  const actionable = picks?.filter((p) => p.tier === "ACTIONABLE") ?? [];
+  const tracking = picks?.filter((p) => p.tier === "TRACKING") ?? [];
+
+  // Group actionable by sport, then sort by strategy order
+  const sportGroups = groupBySport(actionable);
 
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="font-mono text-xl font-bold tracking-tight">
-          COMMAND CENTER
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Portfolio overview &middot; {today()}
-          {summary?.last_sync && (
-            <span className="ml-3">
-              Synced: {new Date(summary.last_sync).toLocaleString()}
-            </span>
-          )}
-        </p>
-      </div>
-
-      {/* Top row: 6 metric cards */}
-      {!summary ? (
-        <MetricsSkeleton />
-      ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-          <MetricCard
-            label="Total P&L"
-            value={fmtUnits(summary.total_pnl)}
-            className={pnlColor(summary.total_pnl)}
-          />
-          <MetricCard
-            label="ROI"
-            value={roi != null ? fmtPct(roi) : "—"}
-            className={pnlColor(roi)}
-          />
-          <MetricCard
-            label="Win Rate"
-            value={winRate != null ? fmtPct(winRate) : "—"}
-          />
-          <MetricCard
-            label="Open Bets"
-            value={String(summary.open_bets)}
-          />
-          <MetricCard
-            label="Settled Bets"
-            value={String(totalSettled)}
-            subtext={`${summary.wins}W / ${summary.losses}L`}
-          />
-          <MetricCard
-            label="Bankroll"
-            value={fmtCurrency(bankroll)}
-            subtext={`Base: ${fmtCurrency(BANKROLL_BASE)}`}
-          />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-mono text-lg font-bold tracking-tight">
+            ACTIVE SIGNALS
+          </h1>
+          <p className="font-mono text-xs text-muted-foreground">
+            {today()} &middot;{" "}
+            {actionable.length} actionable &middot;{" "}
+            {tracking.length} tracking
+          </p>
         </div>
-      )}
-
-      {/* Today's Picks */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Today&apos;s Picks &middot; {today()}
-          {picks && <span className="ml-2 text-xs">({picks.length} bets)</span>}
-        </h2>
-        {picks === null ? (
-          <TableSkeleton />
-        ) : (
-          <DataTable<Pick>
-            columns={pickColumns}
-            data={picks}
-            emptyMessage="No picks today"
-          />
-        )}
-      </section>
-
-      {/* Yesterday's Results */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Yesterday&apos;s Results &middot; {yesterday()}
-          {results && <span className="ml-2 text-xs">({results.length} settled)</span>}
-        </h2>
-        {results === null ? (
-          <TableSkeleton />
-        ) : (
-          <DataTable<Result>
-            columns={resultColumns}
-            data={results}
-            emptyMessage="No results yesterday"
-          />
-        )}
-      </section>
-
-      {/* Strategy Performance */}
-      <section className="space-y-3">
-        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Strategy Performance
-        </h2>
-        {strategies === null ? (
-          <TableSkeleton />
-        ) : strategies.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No settled bets yet</p>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {strategies.map((s) => {
-              const wr = s.total > 0 ? s.wins / s.total : 0;
-              return (
-                <Card key={s.strategy}>
-                  <CardHeader className="pb-0">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="truncate font-mono text-sm">
-                        {s.strategy}
-                      </CardTitle>
-                      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider">
-                        {s.sport}
-                      </span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-2">
-                    <div className="mt-1 grid grid-cols-4 gap-2 text-xs">
-                      <div>
-                        <div className="text-muted-foreground">Record</div>
-                        <div className="font-mono font-semibold">
-                          {s.wins}-{s.losses}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">Win%</div>
-                        <div className="font-mono font-semibold">
-                          {fmtPct(wr)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">P&L</div>
-                        <div
-                          className={cn(
-                            "font-mono font-semibold",
-                            pnlColor(s.total_pnl)
-                          )}
-                        >
-                          {fmtUnits(s.total_pnl)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground">Avg Edge</div>
-                        <div className="font-mono font-semibold">
-                          {fmtPct(s.avg_edge)}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+        {summary && (
+          <div className="hidden items-center gap-4 font-mono text-xs md:flex">
+            <StatPill
+              label="TODAY P&L"
+              value={fmtUnits(summary.total_pnl)}
+              color={pnlColor(summary.total_pnl)}
+            />
+            <StatPill
+              label="BANKROLL"
+              value={fmtCurrency(BANKROLL_BASE + summary.total_pnl)}
+            />
           </div>
         )}
-      </section>
+      </div>
+
+      {/* Main 2-column layout */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* LEFT: Active Signals (2/3 width) */}
+        <div className="space-y-4 lg:col-span-2">
+          {picks === null ? (
+            <LoadingSkeleton />
+          ) : actionable.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center font-mono text-sm text-muted-foreground">
+                No actionable signals for {today()}
+              </CardContent>
+            </Card>
+          ) : (
+            Object.entries(sportGroups).map(([sport, sportPicks]) => (
+              <div key={sport} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    {sport}
+                  </span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <div className="space-y-1">
+                  {sportPicks
+                    .sort((a, b) => strategySort(a.strategy, b.strategy))
+                    .map((pick, i) => (
+                      <SignalRow key={`${pick.game_id}-${pick.strategy}-${i}`} pick={pick} />
+                    ))}
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Tracking section (collapsed) */}
+          {tracking.length > 0 && (
+            <details className="group">
+              <summary className="cursor-pointer font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground">
+                Tracking ({tracking.length}) &mdash; low edge / informational
+              </summary>
+              <div className="mt-2 space-y-1">
+                {tracking
+                  .sort((a, b) => strategySort(a.strategy, b.strategy))
+                  .map((pick, i) => (
+                    <SignalRow
+                      key={`track-${pick.game_id}-${pick.strategy}-${i}`}
+                      pick={pick}
+                      dimmed
+                    />
+                  ))}
+              </div>
+            </details>
+          )}
+        </div>
+
+        {/* RIGHT: Settlement Feed + Strategy Health (1/3 width) */}
+        <div className="space-y-4">
+          {/* Settlement Feed */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Recent Settlements
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0 p-0">
+              {settlements === null ? (
+                <div className="p-4">
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              ) : settlements.length === 0 ? (
+                <div className="p-4 text-center font-mono text-xs text-muted-foreground">
+                  No recent settlements
+                </div>
+              ) : (
+                <div className="max-h-[400px] overflow-y-auto">
+                  {settlements.slice(0, 15).map((s, i) => (
+                    <SettlementRow key={`${s.game_id}-${s.strategy}-${i}`} s={s} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Strategy Health */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                Strategy Health
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-0 p-0">
+              {strategies === null ? (
+                <div className="p-4">
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              ) : (
+                <div className="max-h-[300px] overflow-y-auto">
+                  {strategies.map((s) => (
+                    <StrategyHealthRow key={s.strategy} s={s} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
+}
+
+/* ---------- sub-components ---------- */
+
+function SignalRow({ pick, dimmed }: { pick: Pick; dimmed?: boolean }) {
+  const bet = formatBet(pick.strategy, pick.bet_side, pick.home_team_id, pick.away_team_id);
+  const matchup = `${pick.away_team_id ?? "?"} @ ${pick.home_team_id ?? "?"}`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between rounded-md border px-3 py-2 font-mono text-sm transition-colors hover:bg-accent/50",
+        dimmed && "opacity-50"
+      )}
+    >
+      {/* Left: bet + matchup */}
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "inline-flex min-w-[80px] items-center justify-center rounded px-2 py-0.5 text-[10px] font-bold uppercase",
+            !dimmed
+              ? "bg-[var(--win)]/15 text-[var(--win)]"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          {bet}
+        </span>
+        <span className="text-xs text-muted-foreground">{matchup}</span>
+      </div>
+
+      {/* Right: edge, kelly, odds */}
+      <div className="flex items-center gap-4 text-xs tabular-nums">
+        <div className="text-right">
+          <span className="text-muted-foreground">EDGE </span>
+          <span className={pnlColor(pick.edge)}>{fmtPct(pick.edge)}</span>
+        </div>
+        <div className="text-right">
+          <span className="text-muted-foreground">KELLY </span>
+          <span>{fmtPct(pick.kelly_size)}</span>
+        </div>
+        <div className="text-right">
+          <span className="text-muted-foreground">ODDS </span>
+          <span>{fmtOdds(pick.book_odds)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettlementRow({ s }: { s: Settlement }) {
+  const bet = formatBet(s.strategy, s.bet_side, s.home_team_id, s.away_team_id);
+  const matchup = `${s.away_team_id ?? "?"} @ ${s.home_team_id ?? "?"}`;
+  const isWin = s.result === "win";
+  const isLoss = s.result === "loss";
+
+  return (
+    <div className="flex items-center justify-between border-b border-border/50 px-4 py-2 font-mono text-xs last:border-b-0">
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold",
+            isWin
+              ? "bg-[var(--win)]/20 text-[var(--win)]"
+              : isLoss
+                ? "bg-[var(--loss)]/20 text-[var(--loss)]"
+                : "bg-muted text-muted-foreground"
+          )}
+        >
+          {isWin ? "W" : isLoss ? "L" : "P"}
+        </span>
+        <div>
+          <div className="font-semibold">{bet}</div>
+          <div className="text-[10px] text-muted-foreground">{matchup}</div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className={cn("font-semibold tabular-nums", pnlColor(s.pnl))}>
+          {fmtUnits(s.pnl)}
+        </div>
+        {s.home_score != null && (
+          <div className="text-[10px] text-muted-foreground">
+            {s.away_score}-{s.home_score}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StrategyHealthRow({ s }: { s: Strategy }) {
+  const wr = s.total > 0 ? s.wins / s.total : 0;
+  return (
+    <div className="flex items-center justify-between border-b border-border/50 px-4 py-2 font-mono text-xs last:border-b-0">
+      <div>
+        <div className="font-semibold">{s.strategy}</div>
+        <div className="text-[10px] text-muted-foreground">
+          {s.wins}-{s.losses} &middot; {fmtPct(wr)} win
+        </div>
+      </div>
+      <div className="text-right">
+        <div className={cn("font-semibold tabular-nums", pnlColor(s.total_pnl))}>
+          {fmtUnits(s.total_pnl)}
+        </div>
+        {s.avg_edge != null && (
+          <div className="text-[10px] text-muted-foreground">
+            avg edge {fmtPct(s.avg_edge)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatPill({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("font-semibold tabular-nums", color)}>{value}</span>
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
+    </div>
+  );
+}
+
+/* ---------- helpers ---------- */
+
+function groupBySport(picks: Pick[]): Record<string, Pick[]> {
+  const groups: Record<string, Pick[]> = {};
+  for (const p of picks) {
+    const sport = (p.sport ?? "OTHER").toUpperCase();
+    if (!groups[sport]) groups[sport] = [];
+    groups[sport].push(p);
+  }
+  // Sort sports: MLB first, then NBA, then others
+  const order: Record<string, number> = { MLB: 0, NBA: 1, NFL: 2 };
+  const sorted: Record<string, Pick[]> = {};
+  for (const key of Object.keys(groups).sort(
+    (a, b) => (order[a] ?? 99) - (order[b] ?? 99)
+  )) {
+    sorted[key] = groups[key];
+  }
+  return sorted;
 }

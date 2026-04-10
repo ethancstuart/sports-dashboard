@@ -195,6 +195,38 @@ export async function getShadowResults() {
   }
 }
 
+// ── Actionable picks (today, with tier) ──
+export async function getActionablePicks(date: string) {
+  return query(`
+    SELECT sp.*,
+           g.home_team_id, g.away_team_id, g.home_score, g.away_score,
+           CASE
+             WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 'ACTIONABLE'
+             ELSE 'TRACKING'
+           END as tier
+    FROM strategy_picks sp
+    LEFT JOIN games g ON sp.game_id = g.game_id
+    WHERE sp.game_date = $1
+    ORDER BY
+      CASE WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 0 ELSE 1 END,
+      sp.kelly_size DESC NULLS LAST,
+      sp.strategy
+  `, [date]);
+}
+
+// ── Recent settlements ──
+export async function getRecentSettlements(limit: number = 20) {
+  return query(`
+    SELECT sp.*,
+           g.home_team_id, g.away_team_id, g.home_score, g.away_score
+    FROM strategy_picks sp
+    LEFT JOIN games g ON sp.game_id = g.game_id
+    WHERE sp.result IS NOT NULL
+    ORDER BY sp.settled_at DESC NULLS LAST, sp.game_date DESC
+    LIMIT $1
+  `, [limit]);
+}
+
 // ── Last sync time ──
 export async function getLastSync() {
   try {

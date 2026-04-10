@@ -41,6 +41,71 @@ export function fmtDate(d: string | null | undefined): string {
   });
 }
 
+/** Human-readable bet label from strategy + side + teams */
+export function formatBet(
+  strategy: string,
+  betSide: string | null,
+  home: string | null,
+  away: string | null
+): string {
+  const side = (betSide ?? "").toLowerCase();
+  const team = side === "home" || side === "home_ml"
+    ? (home ?? "HOME")
+    : side === "away" || side === "away_ml"
+      ? (away ?? "AWAY")
+      : null;
+
+  switch (strategy) {
+    case "mlb_nrfi":
+      return "NRFI";
+    case "mlb_yrfi":
+      return "YRFI";
+    case "mlb_f5_under":
+      return "F5 Under";
+    case "mlb_ml":
+      return team ? `${team} ML` : "ML";
+    case "nba_ml":
+      return team ? `${team} ML` : "ML";
+    case "nba_spread":
+      return team ? `${team} Spread` : "Spread";
+    case "nba_totals":
+      return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
+    case "nfl_ml":
+      return team ? `${team} ML` : "ML";
+    case "nfl_spread":
+      return team ? `${team} Spread` : "Spread";
+    case "nfl_totals":
+      return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
+    default:
+      // Fallback: clean up strategy name
+      return strategy.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+
+/** Tier label based on edge and kelly */
+export function getTier(edge: number | null, kelly: number | null): "ACTIONABLE" | "TRACKING" {
+  if (edge != null && kelly != null && kelly > 0.005 && edge > 0.02) return "ACTIONABLE";
+  return "TRACKING";
+}
+
+/** Sport-specific sort order for strategies */
+const STRATEGY_ORDER: Record<string, number> = {
+  mlb_nrfi: 0,
+  mlb_yrfi: 1,
+  mlb_f5_under: 2,
+  mlb_ml: 3,
+  nba_ml: 0,
+  nba_spread: 1,
+  nba_totals: 2,
+  nfl_ml: 0,
+  nfl_spread: 1,
+  nfl_totals: 2,
+};
+
+export function strategySort(a: string, b: string): number {
+  return (STRATEGY_ORDER[a] ?? 99) - (STRATEGY_ORDER[b] ?? 99);
+}
+
 /** Strategy status badge color */
 export function gateColor(status: string): string {
   switch (status) {
