@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { fmtUnits, fmtPct, fmtCurrency, pnlColor } from "@/lib/format";
+import { BANKROLL_BASE } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 interface TickerData {
@@ -13,33 +14,33 @@ interface TickerData {
   last_sync: string | null;
 }
 
-const BANKROLL_BASE = 200;
+function formatNow() {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 export function TopBar() {
   const [data, setData] = useState<TickerData | null>(null);
   const [now, setNow] = useState("");
 
   useEffect(() => {
-    setNow(
-      new Date().toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      })
-    );
+    setNow(formatNow());
 
-    fetch("/api/summary")
-      .then((r) => r.json())
-      .then((d) => setData(d))
-      .catch(() => {});
-
-    // Refresh every 60s
-    const interval = setInterval(() => {
+    function refresh() {
       fetch("/api/summary")
         .then((r) => r.json())
-        .then((d) => setData(d))
+        .then((d) => {
+          setData(d);
+          setNow(formatNow()); // Update date on each refresh
+        })
         .catch(() => {});
-    }, 60_000);
+    }
+
+    refresh();
+    const interval = setInterval(refresh, 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -75,7 +76,17 @@ export function TopBar() {
       <div className="text-muted-foreground">
         {data?.last_sync && (
           <span>
-            SYNC {new Date(data.last_sync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            SYNC{" "}
+            {(() => {
+              try {
+                return new Date(data.last_sync).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+              } catch {
+                return "—";
+              }
+            })()}
           </span>
         )}
       </div>

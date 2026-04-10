@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -12,6 +12,7 @@ import {
   formatBet,
   strategySort,
 } from "@/lib/format";
+import { BANKROLL_BASE } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /* ---------- types ---------- */
@@ -77,7 +78,22 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const BANKROLL_BASE = 200;
+function groupBySport(picks: Pick[]): Record<string, Pick[]> {
+  const groups: Record<string, Pick[]> = {};
+  for (const p of picks) {
+    const sport = (p.sport ?? "OTHER").toUpperCase();
+    if (!groups[sport]) groups[sport] = [];
+    groups[sport].push(p);
+  }
+  const order: Record<string, number> = { MLB: 0, NBA: 1, NFL: 2 };
+  const sorted: Record<string, Pick[]> = {};
+  for (const key of Object.keys(groups).sort(
+    (a, b) => (order[a] ?? 99) - (order[b] ?? 99)
+  )) {
+    sorted[key] = groups[key];
+  }
+  return sorted;
+}
 
 /* ---------- page ---------- */
 
@@ -86,34 +102,61 @@ export default function CommandCenter() {
   const [picks, setPicks] = useState<Pick[] | null>(null);
   const [settlements, setSettlements] = useState<Settlement[] | null>(null);
   const [strategies, setStrategies] = useState<Strategy[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
     async function load() {
-      const [sumRes, picksRes, settleRes, stratRes] = await Promise.all([
-        fetch("/api/summary"),
-        fetch(`/api/picks?date=${today()}`),
-        fetch("/api/settlements"),
-        fetch("/api/strategies"),
-      ]);
-      const [sumData, picksData, settleData, stratData] = await Promise.all([
-        sumRes.json(),
-        picksRes.json(),
-        settleRes.json(),
-        stratRes.json(),
-      ]);
-      setSummary(sumData);
-      setPicks(picksData);
-      setSettlements(settleData);
-      setStrategies(stratData);
+      try {
+        const [sumRes, picksRes, settleRes, stratRes] = await Promise.all([
+          fetch("/api/summary", { signal }),
+          fetch(`/api/picks?date=${today()}`, { signal }),
+          fetch("/api/settlements", { signal }),
+          fetch("/api/strategies", { signal }),
+        ]);
+        const [sumData, picksData, settleData, stratData] = await Promise.all([
+          sumRes.json(),
+          picksRes.json(),
+          settleRes.json(),
+          stratRes.json(),
+        ]);
+        setSummary(sumData);
+        setPicks(Array.isArray(picksData) ? picksData : []);
+        setSettlements(Array.isArray(settleData) ? settleData : []);
+        setStrategies(Array.isArray(stratData) ? stratData : []);
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setError("Failed to load data. Check connection.");
+        }
+      }
     }
     load();
+    return () => controller.abort();
   }, []);
 
-  const actionable = picks?.filter((p) => p.tier === "ACTIONABLE") ?? [];
-  const tracking = picks?.filter((p) => p.tier === "TRACKING") ?? [];
+  const actionable = useMemo(
+    () => picks?.filter((p) => p.tier === "ACTIONABLE") ?? [],
+    [picks]
+  );
+  const tracking = useMemo(
+    () => picks?.filter((p) => p.tier === "TRACKING") ?? [],
+    [picks]
+  );
+  const sportGroups = useMemo(() => groupBySport(actionable), [actionable]);
 
-  // Group actionable by sport, then sort by strategy order
-  const sportGroups = groupBySport(actionable);
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Card>
+          <CardContent className="p-6 text-center font-mono text-sm text-destructive">
+            {error}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -132,7 +175,7 @@ export default function CommandCenter() {
         {summary && (
           <div className="hidden items-center gap-4 font-mono text-xs md:flex">
             <StatPill
-              label="TODAY P&L"
+              label="TOTAL P&L"
               value={fmtUnits(summary.total_pnl)}
               color={pnlColor(summary.total_pnl)}
             />
@@ -265,7 +308,6 @@ function SignalRow({ pick, dimmed }: { pick: Pick; dimmed?: boolean }) {
         dimmed && "opacity-50"
       )}
     >
-      {/* Left: bet + matchup */}
       <div className="flex items-center gap-3">
         <span
           className={cn(
@@ -280,7 +322,6 @@ function SignalRow({ pick, dimmed }: { pick: Pick; dimmed?: boolean }) {
         <span className="text-xs text-muted-foreground">{matchup}</span>
       </div>
 
-      {/* Right: edge, kelly, odds */}
       <div className="flex items-center gap-4 text-xs tabular-nums">
         <div className="text-right">
           <span className="text-muted-foreground">EDGE </span>
@@ -388,24 +429,4 @@ function LoadingSkeleton() {
       ))}
     </div>
   );
-}
-
-/* ---------- helpers ---------- */
-
-function groupBySport(picks: Pick[]): Record<string, Pick[]> {
-  const groups: Record<string, Pick[]> = {};
-  for (const p of picks) {
-    const sport = (p.sport ?? "OTHER").toUpperCase();
-    if (!groups[sport]) groups[sport] = [];
-    groups[sport].push(p);
-  }
-  // Sort sports: MLB first, then NBA, then others
-  const order: Record<string, number> = { MLB: 0, NBA: 1, NFL: 2 };
-  const sorted: Record<string, Pick[]> = {};
-  for (const key of Object.keys(groups).sort(
-    (a, b) => (order[a] ?? 99) - (order[b] ?? 99)
-  )) {
-    sorted[key] = groups[key];
-  }
-  return sorted;
 }

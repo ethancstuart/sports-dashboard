@@ -50,9 +50,9 @@ export function formatBet(
 ): string {
   const side = (betSide ?? "").toLowerCase();
   const team = side === "home" || side === "home_ml"
-    ? (home ?? "HOME")
+    ? (home || null)
     : side === "away" || side === "away_ml"
-      ? (away ?? "AWAY")
+      ? (away || null)
       : null;
 
   switch (strategy) {

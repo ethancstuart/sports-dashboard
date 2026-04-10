@@ -4,7 +4,7 @@ import { getPnlTimeSeries } from "@/lib/queries";
 export async function GET(request: NextRequest) {
   try {
     const daysParam = request.nextUrl.searchParams.get("days");
-    const days = daysParam ? parseInt(daysParam, 10) : 90;
+    const days = Math.min(Math.max(daysParam ? parseInt(daysParam, 10) || 90 : 90, 1), 365);
     const pnl = await getPnlTimeSeries(days);
     return NextResponse.json(pnl);
   } catch (error) {

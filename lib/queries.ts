@@ -1,5 +1,15 @@
 import { query, queryOne } from "./db";
 
+// ── Ensure indexes exist (runs once per cold start, idempotent) ──
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _ensureIndexes = query(`
+  CREATE INDEX IF NOT EXISTS idx_sp_game_date ON strategy_picks(game_date);
+  CREATE INDEX IF NOT EXISTS idx_sp_strategy ON strategy_picks(strategy);
+  CREATE INDEX IF NOT EXISTS idx_sp_result ON strategy_picks(result) WHERE result IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_sp_settled ON strategy_picks(settled_at DESC) WHERE result IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_games_game_id ON games(game_id);
+`).catch(() => {}); // Silently ignore if already exists or no permission
+
 // ── Portfolio Summary ──
 export async function getPortfolioSummary() {
   const totals = await queryOne<{
