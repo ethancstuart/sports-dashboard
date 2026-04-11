@@ -1,11 +1,10 @@
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
+@source "../components/**/*.tsx";
+@source "../app/**/*.tsx";
+@source "../lib/**/*.ts";
 
 @theme inline {
   --color-background: oklch(0.12 0.005 260);
