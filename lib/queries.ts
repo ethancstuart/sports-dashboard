@@ -237,6 +237,80 @@ export async function getRecentSettlements(limit: number = 20) {
   `, [limit]);
 }
 
+// ── Strategy equity curves (cumulative P&L per strategy over time) ──
+export async function getStrategyEquity() {
+  return query(`
+    SELECT strategy, sport, game_date,
+           SUM(pnl) as daily_pnl,
+           SUM(SUM(pnl)) OVER (PARTITION BY strategy ORDER BY game_date) as cumulative_pnl,
+           COUNT(*) as bets,
+           SUM(CASE WHEN result='win' THEN 1 ELSE 0 END) as wins
+    FROM strategy_picks
+    WHERE result IS NOT NULL
+    GROUP BY strategy, sport, game_date
+    ORDER BY strategy, game_date
+  `);
+}
+
+// ── Similar spots: historical record at similar confidence levels ──
+export async function getSimilarSpots(strategy: string, confidence: number, range: number = 0.03) {
+  const lo = confidence - range;
+  const hi = confidence + range;
+  return queryOne<{ total: number; wins: number; losses: number; avg_pnl: number }>(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN result='win' THEN 1 ELSE 0 END) as wins,
+      SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END) as losses,
+      AVG(pnl) as avg_pnl
+    FROM strategy_picks
+    WHERE strategy = $1
+      AND result IS NOT NULL
+      AND predicted_value BETWEEN $2 AND $3
+  `, [strategy, lo, hi]);
+}
+
+// ── Picks by sport for a date ──
+export async function getPicksBySport(date: string, sport: string) {
+  return query(`
+    SELECT sp.*,
+           g.home_team_id, g.away_team_id, g.home_score, g.away_score,
+           CASE
+             WHEN sp.edge > 0.04 AND sp.kelly_size > 0.01 THEN 'HIGH'
+             WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 'MEDIUM'
+             ELSE 'LOW'
+           END as urgency
+    FROM strategy_picks sp
+    LEFT JOIN games g ON sp.game_id = g.game_id
+    WHERE sp.game_date = $1 AND sp.sport = $2
+    ORDER BY
+      CASE
+        WHEN sp.edge > 0.04 AND sp.kelly_size > 0.01 THEN 0
+        WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 1
+        ELSE 2
+      END,
+      sp.kelly_size DESC NULLS LAST,
+      sp.strategy
+  `, [date, sport]);
+}
+
+// ── Strategy performance by sport ──
+export async function getStrategyPerformanceBySport(sport: string) {
+  return query(`
+    SELECT
+      strategy,
+      COUNT(*) as total,
+      SUM(CASE WHEN result='win' THEN 1 ELSE 0 END) as wins,
+      SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END) as losses,
+      COALESCE(SUM(pnl), 0) as total_pnl,
+      AVG(edge) as avg_edge,
+      AVG(CASE WHEN clv IS NOT NULL THEN clv END) as avg_clv
+    FROM strategy_picks
+    WHERE result IS NOT NULL AND sport = $1
+    GROUP BY strategy
+    ORDER BY total_pnl DESC
+  `, [sport]);
+}
+
 // ── Last sync time ──
 export async function getLastSync() {
   try {
