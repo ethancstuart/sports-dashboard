@@ -6,10 +6,13 @@ export function fmtCurrency(n: number | null | undefined): string {
     : `$${n.toFixed(2)}`;
 }
 
-/** Format a number as +/- units */
+/** Format a number as +/- dollar P&L (1 unit = $20) */
 export function fmtUnits(n: number | null | undefined): string {
   if (n == null) return "—";
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}u`;
+  const dollars = n * 20;
+  return dollars < 0
+    ? `-$${Math.abs(dollars).toFixed(0)}`
+    : `+$${dollars.toFixed(0)}`;
 }
 
 /** Format percentage */
@@ -70,6 +73,14 @@ export function formatBet(
       return team ? `${team} Spread` : "Spread";
     case "nba_totals":
       return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
+    case "nba_1q_spread":
+      return "1Q Spread";
+    case "nba_1h_spread":
+      return "1H Spread";
+    case "nba_first_10":
+      return "First to 10";
+    case "nba_first_20":
+      return "First to 20";
     case "nfl_ml":
       return team ? `${team} ML` : "ML";
     case "nfl_spread":
@@ -95,8 +106,12 @@ const STRATEGY_ORDER: Record<string, number> = {
   mlb_f5_under: 2,
   mlb_ml: 3,
   nba_ml: 0,
-  nba_spread: 1,
-  nba_totals: 2,
+  nba_1q_spread: 1,
+  nba_first_10: 2,
+  nba_first_20: 3,
+  nba_spread: 4,
+  nba_1h_spread: 5,
+  nba_totals: 6,
   nfl_ml: 0,
   nfl_spread: 1,
   nfl_totals: 2,

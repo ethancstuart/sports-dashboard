@@ -12,7 +12,7 @@ import {
   formatBet,
   strategySort,
 } from "@/lib/format";
-import { BANKROLL_BASE } from "@/lib/constants";
+import { BANKROLL_BASE, UNIT_SIZE, localToday } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /* ---------- types ---------- */
@@ -74,10 +74,6 @@ interface Strategy {
 
 /* ---------- helpers ---------- */
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function groupBySport(picks: Pick[]): Record<string, Pick[]> {
   const groups: Record<string, Pick[]> = {};
   for (const p of picks) {
@@ -112,7 +108,7 @@ export default function CommandCenter() {
       try {
         const [sumRes, picksRes, settleRes, stratRes] = await Promise.all([
           fetch("/api/summary", { signal }),
-          fetch(`/api/picks?date=${today()}`, { signal }),
+          fetch(`/api/picks?date=${localToday()}`, { signal }),
           fetch("/api/settlements", { signal }),
           fetch("/api/strategies", { signal }),
         ]);
@@ -167,7 +163,7 @@ export default function CommandCenter() {
             ACTIVE SIGNALS
           </h1>
           <p className="font-mono text-xs text-muted-foreground">
-            {today()} &middot;{" "}
+            {localToday()} &middot;{" "}
             {actionable.length} actionable &middot;{" "}
             {tracking.length} tracking
           </p>
@@ -181,7 +177,7 @@ export default function CommandCenter() {
             />
             <StatPill
               label="BANKROLL"
-              value={fmtCurrency(BANKROLL_BASE + summary.total_pnl)}
+              value={fmtCurrency(BANKROLL_BASE + summary.total_pnl * UNIT_SIZE)}
             />
           </div>
         )}
@@ -196,7 +192,7 @@ export default function CommandCenter() {
           ) : actionable.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center font-mono text-sm text-muted-foreground">
-                No actionable signals for {today()}
+                No actionable signals for {localToday()}
               </CardContent>
             </Card>
           ) : (

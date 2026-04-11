@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { fmtUnits, fmtPct, fmtCurrency, pnlColor } from "@/lib/format";
-import { BANKROLL_BASE } from "@/lib/constants";
+import { BANKROLL_BASE, UNIT_SIZE } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 interface TickerData {
@@ -44,7 +44,7 @@ export function TopBar() {
     return () => clearInterval(interval);
   }, []);
 
-  const bankroll = BANKROLL_BASE + (data?.total_pnl ?? 0);
+  const bankroll = BANKROLL_BASE + (data?.total_pnl ?? 0) * UNIT_SIZE;
   const settled = (data?.wins ?? 0) + (data?.losses ?? 0);
   const winRate = settled > 0 ? (data?.wins ?? 0) / settled : null;
 
