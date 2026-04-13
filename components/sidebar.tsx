@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Database,
   Activity,
+  Terminal,
   Menu,
   X,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/models", label: "Model Registry", icon: Cpu },
   { href: "/gates", label: "Strategy Gates", icon: ShieldCheck },
   { href: "/data", label: "Data Observatory", icon: Database },
+  { href: "/data/explorer", label: "Data Explorer", icon: Terminal },
   { href: "/pipeline", label: "Pipeline Control", icon: Activity },
 ];
 
