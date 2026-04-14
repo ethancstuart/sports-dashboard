@@ -76,8 +76,13 @@ function computeLiveStatus(
 
   const strategy = pick.strategy;
   const side = (pick.bet_side ?? "").toLowerCase();
-  const odds = pick.book_odds ?? -110;
+  // If odds are null, we can't compute PnL — show as tracking
+  if (pick.book_odds == null) {
+    return { live_status: "tracking", live_pnl: 0 };
+  }
+  const odds = pick.book_odds;
   const winPayout = odds > 0 ? odds / 100 : 100 / Math.abs(odds);
+  const kellySize = pick.kelly_size ?? 1;
   const { home_score: hs, away_score: as_ } = game;
 
   let isWinning = false;
@@ -126,7 +131,7 @@ function computeLiveStatus(
     }
   }
 
-  const live_pnl = isWinning ? winPayout : -1;
+  const live_pnl = isWinning ? winPayout * kellySize : -1 * kellySize;
   const live_status = game.status === "post"
     ? (isWinning ? "won" : "lost")
     : (isWinning ? "winning" : "losing");

@@ -57,7 +57,7 @@ export async function GET() {
           AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
           AND g.game_date < to_char(CURRENT_DATE - INTERVAL '1 day', 'YYYY-MM-DD')
       `);
-      unsettledCount = row?.count ?? 0;
+      unsettledCount = Number(row?.count ?? 0);
     } catch { /* ignore */ }
 
     // Recent alerts

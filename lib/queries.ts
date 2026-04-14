@@ -1,17 +1,23 @@
 import { query, queryOne } from "./db";
 
-// ── Ensure indexes exist (runs once per cold start, idempotent) ──
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _ensureIndexes = query(`
-  CREATE INDEX IF NOT EXISTS idx_sp_game_date ON strategy_picks(game_date);
-  CREATE INDEX IF NOT EXISTS idx_sp_strategy ON strategy_picks(strategy);
-  CREATE INDEX IF NOT EXISTS idx_sp_result ON strategy_picks(result) WHERE result IS NULL;
-  CREATE INDEX IF NOT EXISTS idx_sp_settled ON strategy_picks(settled_at DESC) WHERE result IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS idx_games_game_id ON games(game_id);
-`).catch(() => {}); // Silently ignore if already exists or no permission
+// ── Ensure indexes exist (lazy, runs once per cold start) ──
+let _indexesCreated = false;
+async function ensureIndexes() {
+  if (_indexesCreated) return;
+  _indexesCreated = true;
+  const indexes = [
+    "CREATE INDEX IF NOT EXISTS idx_sp_game_date ON strategy_picks(game_date)",
+    "CREATE INDEX IF NOT EXISTS idx_sp_strategy ON strategy_picks(strategy)",
+    "CREATE INDEX IF NOT EXISTS idx_sp_result ON strategy_picks(result) WHERE result IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_sp_settled ON strategy_picks(settled_at DESC) WHERE result IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_games_game_id ON games(game_id)",
+  ];
+  await Promise.allSettled(indexes.map((sql) => query(sql)));
+}
 
 // ── Portfolio Summary ──
 export async function getPortfolioSummary() {
+  await ensureIndexes();
   const totals = await queryOne<{
     total_picks: number;
     wins: number;
@@ -32,7 +38,14 @@ export async function getPortfolioSummary() {
     SELECT COUNT(*) as count FROM strategy_picks WHERE result IS NULL
   `);
 
-  return { ...totals, open_bets: open?.count ?? 0 };
+  return {
+    total_picks: Number(totals?.total_picks ?? 0),
+    wins: Number(totals?.wins ?? 0),
+    losses: Number(totals?.losses ?? 0),
+    pushes: Number(totals?.pushes ?? 0),
+    total_pnl: Number(totals?.total_pnl ?? 0),
+    open_bets: Number(open?.count ?? 0),
+  };
 }
 
 // ── Picks by date ──
@@ -170,16 +183,15 @@ export async function getDataStats() {
   const tables = ["games", "strategy_picks", "predictions", "subgame_predictions",
                   "elo_ratings", "odds", "nfl_quarter_scores", "nba_quarter_scores"];
 
-  const stats = [];
-  for (const table of tables) {
-    try {
+  const results = await Promise.allSettled(
+    tables.map(async (table) => {
       const row = await queryOne<{ count: number }>(`SELECT COUNT(*) as count FROM ${table}`);
-      stats.push({ table, count: row?.count ?? 0 });
-    } catch {
-      stats.push({ table, count: 0 });
-    }
-  }
-  return stats;
+      return { table, count: Number(row?.count ?? 0) };
+    })
+  );
+  return results.map((r, i) =>
+    r.status === "fulfilled" ? r.value : { table: tables[i], count: 0 }
+  );
 }
 
 // ── Alerts ──
