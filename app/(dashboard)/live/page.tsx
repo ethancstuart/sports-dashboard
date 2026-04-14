@@ -64,6 +64,8 @@ function statusBadge(status: string) {
     case "losing":
     case "lost":
       return "bg-[var(--loss)]/20 text-[var(--loss)] border-[var(--loss)]/30";
+    case "tracking":
+      return "bg-[var(--paused)]/20 text-[var(--paused)] border-[var(--paused)]/30";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -166,7 +168,7 @@ export default function LiveTrackerPage() {
               Live Exposure
             </div>
             <div className="mt-1 font-mono text-2xl font-bold">
-              ${((filteredPicks.reduce((s, p) => s + (p.kelly_size ?? 0), 0)) * UNIT_SIZE * 10).toFixed(0)}
+              ${(((filteredPicks.reduce((s, p) => s + (p.kelly_size ?? 0), 0)) * UNIT_SIZE * 10) || 0).toFixed(0)}
             </div>
           </CardContent>
         </Card>
@@ -328,13 +330,13 @@ function GameCard({ game, picks }: { game: LiveGame; picks?: LivePick[] }) {
 }
 
 function GameProgress({ sport, period }: { sport: string; period: string }) {
-  const p = parseInt(period) || 0;
+  const p = Math.max(0, parseInt(period) || 0);
   let total = 9;
   let label = "inning";
   if (sport === "nba") { total = 4; label = "quarter"; }
   if (sport === "nfl") { total = 4; label = "quarter"; }
 
-  const pct = Math.min((p / total) * 100, 100);
+  const pct = total > 0 ? Math.min(Math.max(0, (p / total) * 100), 100) : 0;
 
   return (
     <div>

@@ -15,18 +15,22 @@ export async function GET() {
       `);
     } catch { /* table may not exist yet */ }
 
-    // Settlement lag per sport
+    // Settlement lag per sport (use text date comparison — both columns are TEXT)
     let settlementLag: unknown[] = [];
     try {
       settlementLag = await query(`
         SELECT sp.sport,
-               AVG(EXTRACT(EPOCH FROM (sp.settled_at::timestamp - g.game_date::timestamp)) / 3600) as avg_hours,
-               MAX(EXTRACT(EPOCH FROM (sp.settled_at::timestamp - g.game_date::timestamp)) / 3600) as max_hours,
+               AVG(
+                 EXTRACT(EPOCH FROM (sp.settled_at::timestamp - (g.game_date || 'T00:00:00')::timestamp)) / 3600
+               ) as avg_hours,
+               MAX(
+                 EXTRACT(EPOCH FROM (sp.settled_at::timestamp - (g.game_date || 'T00:00:00')::timestamp)) / 3600
+               ) as max_hours,
                COUNT(*) as settled_count
         FROM strategy_picks sp
         JOIN games g ON sp.game_id = g.game_id
         WHERE sp.settled_at IS NOT NULL AND sp.result IS NOT NULL
-          AND sp.game_date >= (CURRENT_DATE - INTERVAL '30 days')::text
+          AND sp.game_date >= to_char(CURRENT_DATE - INTERVAL '30 days', 'YYYY-MM-DD')
         GROUP BY sp.sport
       `);
     } catch { /* ignore */ }
@@ -51,7 +55,7 @@ export async function GET() {
         JOIN games g ON sp.game_id = g.game_id
         WHERE sp.result IS NULL AND sp.settled_at IS NULL
           AND g.home_score IS NOT NULL AND g.away_score IS NOT NULL
-          AND g.game_date < (CURRENT_DATE - INTERVAL '1 day')::text
+          AND g.game_date < to_char(CURRENT_DATE - INTERVAL '1 day', 'YYYY-MM-DD')
       `);
       unsettledCount = row?.count ?? 0;
     } catch { /* ignore */ }
