@@ -335,6 +335,47 @@ export async function getDataFreshness() {
   `);
 }
 
+// ── Governance: ingestion log ──
+export async function getIngestionLog(limit: number = 50) {
+  try {
+    return await query(`
+      SELECT sport, source, data_type, season, records_fetched, records_stored,
+             status, notes, started_at, created_at
+      FROM ingestion_log
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+  } catch {
+    return [];
+  }
+}
+
+// ── Governance: retrain metrics from pipeline_artifacts ──
+export async function getRetrainMetrics(limit: number = 10) {
+  try {
+    return await query(`
+      SELECT name, sport, data, created_at
+      FROM pipeline_artifacts
+      WHERE artifact_type = 'retrain_metrics'
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+  } catch {
+    return [];
+  }
+}
+
+// ── Live: today's open picks ──
+export async function getTodaysOpenPicks(today: string) {
+  return query(`
+    SELECT sp.*, g.home_team_id, g.away_team_id, g.home_score, g.away_score
+    FROM strategy_picks sp
+    LEFT JOIN games g ON sp.game_id = g.game_id
+    WHERE sp.result IS NULL AND sp.game_date >= $1
+    ORDER BY sp.game_date, sp.sport, sp.strategy
+  `, [today]);
+}
+
 // ── Pipeline artifacts (health report, etc) ──
 export async function getHealthReport() {
   try {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/metric-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -31,6 +32,45 @@ interface SportFreshness {
 interface DataStats {
   stats: TableStat[];
   freshness: SportFreshness[];
+}
+
+interface IngestionEntry {
+  sport: string;
+  source: string;
+  data_type: string;
+  records_fetched: number;
+  records_stored: number;
+  status: string;
+  created_at: string;
+}
+
+interface SettlementLag {
+  sport: string;
+  avg_hours: number;
+  max_hours: number;
+  settled_count: number;
+}
+
+interface ModelHealth {
+  name: string;
+  sport: string;
+  data: string;
+  created_at: string;
+}
+
+interface AlertEntry {
+  severity: string;
+  message: string;
+  details: string;
+  created_at: string;
+}
+
+interface GovernanceData {
+  ingestion_log: IngestionEntry[];
+  settlement_lag: SettlementLag[];
+  model_health: ModelHealth[];
+  unsettled_count: number;
+  alerts: AlertEntry[];
 }
 
 /* ---------- helpers ---------- */
@@ -95,17 +135,32 @@ function DataSkeleton() {
 
 /* ---------- page ---------- */
 
+function severityBadge(severity: string) {
+  switch (severity?.toLowerCase()) {
+    case "error":
+      return "bg-[var(--loss)]/20 text-[var(--loss)] border-[var(--loss)]/30";
+    case "warning":
+      return "bg-[var(--paused)]/20 text-[var(--paused)] border-[var(--paused)]/30";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
 export default function DataObservatoryPage() {
   const [stats, setStats] = useState<DataStats | null>(null);
+  const [governance, setGovernance] = useState<GovernanceData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/data/stats");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setStats(data);
+        const [statsRes, govRes] = await Promise.all([
+          fetch("/api/data/stats"),
+          fetch("/api/data/governance"),
+        ]);
+        if (statsRes.ok) setStats(await statsRes.json());
+        else throw new Error(`HTTP ${statsRes.status}`);
+        if (govRes.ok) setGovernance(await govRes.json());
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
       }
@@ -124,7 +179,7 @@ export default function DataObservatoryPage() {
           DATA OBSERVATORY
         </h1>
         <p className="text-sm text-muted-foreground">
-          Table statistics &middot; Data freshness
+          Table statistics &middot; Data freshness &middot; Pipeline governance
         </p>
       </div>
 
@@ -265,6 +320,158 @@ export default function DataObservatoryPage() {
               )}
             </div>
           </section>
+
+          {/* ── Governance Sections ── */}
+          {governance && (
+            <>
+              {/* Model Health Summary */}
+              {governance.model_health.length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Model Health (Recent Retrains)
+                  </h2>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-mono text-xs uppercase">Date</TableHead>
+                          <TableHead className="font-mono text-xs uppercase">Status</TableHead>
+                          <TableHead className="font-mono text-xs uppercase text-right">Brier</TableHead>
+                          <TableHead className="font-mono text-xs uppercase text-right">Cal Slope</TableHead>
+                          <TableHead className="font-mono text-xs uppercase text-right">Accuracy</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {governance.model_health.map((m, i) => {
+                          let parsed: Record<string, unknown> = {};
+                          try { parsed = JSON.parse(m.data); } catch { /* ignore */ }
+                          return (
+                            <TableRow key={i}>
+                              <TableCell className="font-mono text-sm">{(parsed.date as string) ?? m.created_at?.slice(0, 10)}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn(
+                                  "text-[10px]",
+                                  parsed.promoted ? "text-[var(--win)]" : "text-[var(--loss)]"
+                                )}>
+                                  {parsed.promoted ? "PROMOTED" : "REJECTED"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-right">
+                                {typeof parsed.brier === "number" ? (parsed.brier as number).toFixed(4) : "—"}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-right">
+                                {typeof parsed.calibration_slope === "number" ? (parsed.calibration_slope as number).toFixed(3) : "—"}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-right">
+                                {typeof parsed.accuracy === "number" ? `${((parsed.accuracy as number) * 100).toFixed(1)}%` : "—"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+              )}
+
+              {/* Settlement Lag + Unsettled */}
+              <section className="space-y-3">
+                <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Settlement Health
+                </h2>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <MetricCard
+                    label="Unsettled (>24h)"
+                    value={String(governance.unsettled_count)}
+                    subtext={governance.unsettled_count === 0 ? "All clear" : "Needs attention"}
+                  />
+                  {governance.settlement_lag.map((s) => (
+                    <Card key={s.sport}>
+                      <CardContent className="pt-4 pb-3">
+                        <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                          {s.sport.toUpperCase()} Avg Lag
+                        </div>
+                        <div className="mt-1 font-mono text-lg font-bold">
+                          {s.avg_hours?.toFixed(1) ?? "—"}h
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          max {s.max_hours?.toFixed(1) ?? "—"}h &middot; {s.settled_count} settled
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+
+              {/* Pipeline Execution Log */}
+              {governance.ingestion_log.length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Pipeline Execution Log
+                  </h2>
+                  <div className="rounded-md border max-h-80 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-mono text-xs uppercase">Time</TableHead>
+                          <TableHead className="font-mono text-xs uppercase">Sport</TableHead>
+                          <TableHead className="font-mono text-xs uppercase">Source</TableHead>
+                          <TableHead className="font-mono text-xs uppercase">Type</TableHead>
+                          <TableHead className="font-mono text-xs uppercase text-right">Fetched</TableHead>
+                          <TableHead className="font-mono text-xs uppercase text-right">Stored</TableHead>
+                          <TableHead className="font-mono text-xs uppercase">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {governance.ingestion_log.map((entry, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-mono text-xs">{entry.created_at?.slice(0, 16) ?? "—"}</TableCell>
+                            <TableCell className="font-mono text-xs uppercase">{entry.sport}</TableCell>
+                            <TableCell className="font-mono text-xs">{entry.source}</TableCell>
+                            <TableCell className="font-mono text-xs">{entry.data_type}</TableCell>
+                            <TableCell className="font-mono text-xs text-right">{entry.records_fetched?.toLocaleString() ?? 0}</TableCell>
+                            <TableCell className="font-mono text-xs text-right">{entry.records_stored?.toLocaleString() ?? 0}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={cn(
+                                "text-[10px]",
+                                entry.status === "ok" ? "text-[var(--win)]" : "text-[var(--loss)]"
+                              )}>
+                                {entry.status?.toUpperCase() ?? "OK"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </section>
+              )}
+
+              {/* Alerts */}
+              {governance.alerts.length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="font-mono text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                    Alerts
+                  </h2>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {governance.alerts.map((alert, i) => (
+                      <div key={i} className="flex items-start gap-3 rounded-md border p-3">
+                        <Badge variant="outline" className={cn("text-[10px] shrink-0", severityBadge(alert.severity))}>
+                          {alert.severity?.toUpperCase() ?? "INFO"}
+                        </Badge>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono text-sm">{alert.message}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {alert.created_at?.slice(0, 16) ?? ""}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
         </>
       ) : null}
     </div>
