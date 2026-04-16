@@ -14,6 +14,7 @@ import {
   Database,
   Activity,
   Terminal,
+  Sparkles,
   Menu,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/pnl", label: "P&L Tracker", icon: TrendingUp },
   { href: "/positions", label: "Open Positions", icon: Crosshair },
   { href: "/live", label: "Live Tracker", icon: Radio },
+  { href: "/analyze", label: "Analyze", icon: Sparkles },
   { href: "/audit", label: "Prediction Audit", icon: Search },
   { href: "/models", label: "Model Registry", icon: Cpu },
   { href: "/gates", label: "Strategy Gates", icon: ShieldCheck },
