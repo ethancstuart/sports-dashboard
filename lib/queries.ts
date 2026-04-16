@@ -388,6 +388,54 @@ export async function getTodaysOpenPicks(today: string) {
   `, [today]);
 }
 
+// ── Model health: per-strategy diagnostic metrics (replaces P&L focus) ──
+//
+// For each strategy: sample size, actual WR vs break-even WR, Brier score,
+// mean CLV, mean edge realization. These are the numbers that tell us if the
+// model is still honest — NOT cumulative P&L.
+export async function getModelHealth() {
+  await ensureIndexes();
+  return query(`
+    SELECT
+      strategy,
+      sport,
+      COUNT(*)::int AS n,
+      SUM(CASE WHEN result='win'  THEN 1 ELSE 0 END)::int AS wins,
+      SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END)::int AS losses,
+      SUM(CASE WHEN result='push' THEN 1 ELSE 0 END)::int AS pushes,
+      -- Hit rate excluding pushes
+      AVG(CASE
+        WHEN result='win'  THEN 1.0
+        WHEN result='loss' THEN 0.0
+        ELSE NULL
+      END) AS actual_wr,
+      -- Break-even WR implied by American odds
+      AVG(
+        CASE
+          WHEN book_odds >=  100 THEN  100.0 / (book_odds + 100.0)
+          WHEN book_odds <= -100 THEN (-book_odds) / ((-book_odds) + 100.0)
+          ELSE 0.524
+        END
+      ) AS breakeven_wr,
+      -- Mean model-predicted probability (confidence on bet side)
+      AVG(predicted_value) AS avg_pred,
+      -- Brier score: mean squared error of predicted prob vs actual outcome
+      AVG(CASE
+        WHEN result='win'  THEN (1 - predicted_value) * (1 - predicted_value)
+        WHEN result='loss' THEN predicted_value * predicted_value
+        ELSE NULL
+      END) AS brier,
+      AVG(CASE WHEN clv IS NOT NULL THEN clv END) AS avg_clv,
+      AVG(edge) AS avg_edge,
+      COALESCE(SUM(pnl), 0) AS total_pnl,
+      MAX(game_date) AS last_bet
+    FROM strategy_picks
+    WHERE result IS NOT NULL AND predicted_value IS NOT NULL
+    GROUP BY strategy, sport
+    ORDER BY n DESC
+  `);
+}
+
 // ── Pipeline artifacts (health report, etc) ──
 export async function getHealthReport() {
   try {

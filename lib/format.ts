@@ -44,7 +44,47 @@ export function fmtDate(d: string | null | undefined): string {
   });
 }
 
-/** Human-readable bet label from strategy + side + teams */
+/** Human-readable strategy label (e.g. "MLB Moneyline"). */
+export function displayStrategy(strategy: string | null | undefined): string {
+  if (!strategy) return "—";
+  const map: Record<string, string> = {
+    mlb_ml: "MLB Moneyline",
+    mlb_f5_under: "MLB F5 — Under",
+    mlb_f5_over: "MLB F5 — Over",
+    mlb_nrfi: "MLB NRFI",
+    mlb_yrfi: "MLB YRFI",
+    mlb_total_over: "MLB Total — Over",
+    mlb_total_under: "MLB Total — Under",
+    mlb_spread: "MLB Run Line",
+    nba_ml: "NBA Moneyline",
+    nba_spread: "NBA Spread",
+    nba_total_over: "NBA Total — Over",
+    nba_total_under: "NBA Total — Under",
+    nba_1q_spread: "NBA Q1 Spread",
+    nba_q1_spread: "NBA Q1 Spread",
+    nba_1h_spread: "NBA 1H Spread",
+    nba_h1_spread: "NBA 1H Spread",
+    nba_first_10: "NBA First to 10",
+    nba_first_to_10: "NBA First to 10",
+    nba_first_20: "NBA First to 20",
+    nba_first_to_20: "NBA First to 20",
+    nba_totals: "NBA Total",
+    nba_player_points: "NBA Player — Points",
+    nba_player_assists: "NBA Player — Assists",
+    nba_player_rebounds: "NBA Player — Rebounds",
+    nfl_ml: "NFL Moneyline",
+    nfl_spread: "NFL Spread",
+    nfl_totals: "NFL Total",
+    nfl_total_over: "NFL Total — Over",
+    nfl_total_under: "NFL Total — Under",
+    nfl_q1_spread: "NFL Q1 Spread",
+    nfl_h1_spread: "NFL 1H Spread",
+    nfl_first_10: "NFL First to 10",
+  };
+  return map[strategy] ?? strategy.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Short tag like "MLB ML", "F5 Under", "Q1 Spread" — for chips. */
 export function formatBet(
   strategy: string,
   betSide: string | null,
@@ -59,38 +99,93 @@ export function formatBet(
       : null;
 
   switch (strategy) {
-    case "mlb_nrfi":
-      return "NRFI";
-    case "mlb_yrfi":
-      return "YRFI";
-    case "mlb_f5_under":
-      return "F5 Under";
+    case "mlb_nrfi": return "NRFI";
+    case "mlb_yrfi": return "YRFI";
+    case "mlb_f5_under": return "F5 Under";
+    case "mlb_f5_over": return "F5 Over";
     case "mlb_ml":
-      return team ? `${team} ML` : "ML";
     case "nba_ml":
-      return team ? `${team} ML` : "ML";
-    case "nba_spread":
-      return team ? `${team} Spread` : "Spread";
-    case "nba_totals":
-      return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
-    case "nba_1q_spread":
-      return "1Q Spread";
-    case "nba_1h_spread":
-      return "1H Spread";
-    case "nba_first_10":
-      return "First to 10";
-    case "nba_first_20":
-      return "First to 20";
     case "nfl_ml":
       return team ? `${team} ML` : "ML";
+    case "nba_spread":
     case "nfl_spread":
+    case "mlb_spread":
       return team ? `${team} Spread` : "Spread";
+    case "nba_totals":
     case "nfl_totals":
       return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
+    case "nba_1q_spread":
+    case "nba_q1_spread":
+      return team ? `${team} Q1` : "Q1 Spread";
+    case "nba_1h_spread":
+    case "nba_h1_spread":
+      return team ? `${team} 1H` : "1H Spread";
+    case "nba_first_10":
+    case "nba_first_to_10":
+      return team ? `${team} First 10` : "First to 10";
+    case "nba_first_20":
+    case "nba_first_to_20":
+      return team ? `${team} First 20` : "First to 20";
     default:
-      // Fallback: clean up strategy name
       return strategy.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
+}
+
+/** Plain-English "bet this" instruction. */
+export function betInstruction(
+  strategy: string,
+  betSide: string | null,
+  home: string | null,
+  away: string | null
+): string {
+  const side = (betSide ?? "").toLowerCase();
+  const team = side === "home" ? home : side === "away" ? away : null;
+
+  if (/_ml$/.test(strategy) && team) return `Bet ${team} Moneyline`;
+  if (strategy === "mlb_f5_under") return "Bet Under — First 5 Innings Total";
+  if (strategy === "mlb_f5_over") return "Bet Over — First 5 Innings Total";
+  if (strategy === "mlb_nrfi") return "Bet NO run scored in 1st inning";
+  if (strategy === "mlb_yrfi") return "Bet YES run scored in 1st inning";
+  if (/_total_over$/.test(strategy)) return "Bet Over — Full Game Total";
+  if (/_total_under$/.test(strategy)) return "Bet Under — Full Game Total";
+  if (strategy === "nba_totals" || strategy === "nfl_totals") {
+    if (side === "over") return "Bet Over — Full Game Total";
+    if (side === "under") return "Bet Under — Full Game Total";
+  }
+  if (/_spread$/.test(strategy) && team) {
+    const market = strategy.includes("q1") || strategy.includes("1q")
+      ? "1st Quarter Spread"
+      : strategy.includes("h1") || strategy.includes("1h")
+        ? "1st Half Spread"
+        : "Spread";
+    return `Bet ${team} ${market}`;
+  }
+  if ((strategy === "nba_first_10" || strategy === "nba_first_to_10" || strategy === "nfl_first_10") && team) {
+    return `Bet ${team} First to 10`;
+  }
+  if ((strategy === "nba_first_20" || strategy === "nba_first_to_20") && team) {
+    return `Bet ${team} First to 20`;
+  }
+  if (strategy.startsWith("nba_player_") && (side === "over" || side === "under")) {
+    const metric = strategy.replace("nba_player_", "");
+    return `Bet ${side[0].toUpperCase() + side.slice(1)} — ${metric}`;
+  }
+  return `Bet ${side || "—"} · ${displayStrategy(strategy)}`;
+}
+
+/** Confidence tier from edge. */
+export function edgeTier(edge: number | null | undefined): "BET" | "LEAN" | "WATCH" {
+  const e = (edge ?? 0) * 100;
+  if (e >= 8) return "BET";
+  if (e >= 4) return "LEAN";
+  return "WATCH";
+}
+
+/** Minimum win-rate needed to break even at given American odds. */
+export function breakevenWR(americanOdds: number | null | undefined): number {
+  if (americanOdds == null) return 0.524; // default -110
+  if (americanOdds >= 100) return 100 / (americanOdds + 100);
+  return -americanOdds / (-americanOdds + 100);
 }
 
 /** Tier label based on edge and kelly */

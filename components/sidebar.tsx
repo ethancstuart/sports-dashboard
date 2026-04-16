@@ -5,12 +5,9 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  TrendingUp,
-  Crosshair,
   Radio,
   Search,
   Cpu,
-  ShieldCheck,
   Database,
   Activity,
   Terminal,
@@ -21,14 +18,11 @@ import {
 import { useState } from "react";
 
 const NAV = [
-  { href: "/", label: "Command Center", icon: LayoutDashboard },
-  { href: "/pnl", label: "P&L Tracker", icon: TrendingUp },
-  { href: "/positions", label: "Open Positions", icon: Crosshair },
-  { href: "/live", label: "Live Tracker", icon: Radio },
+  { href: "/", label: "Today", icon: LayoutDashboard },
+  { href: "/live", label: "Live", icon: Radio },
   { href: "/analyze", label: "Analyze", icon: Sparkles },
   { href: "/audit", label: "Prediction Audit", icon: Search },
   { href: "/models", label: "Model Registry", icon: Cpu },
-  { href: "/gates", label: "Strategy Gates", icon: ShieldCheck },
   { href: "/data", label: "Data Observatory", icon: Database },
   { href: "/data/explorer", label: "Data Explorer", icon: Terminal },
   { href: "/pipeline", label: "Pipeline Control", icon: Activity },
