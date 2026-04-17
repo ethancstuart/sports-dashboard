@@ -11,6 +11,10 @@ async function ensureIndexes() {
     "CREATE INDEX IF NOT EXISTS idx_sp_result ON strategy_picks(result) WHERE result IS NULL",
     "CREATE INDEX IF NOT EXISTS idx_sp_settled ON strategy_picks(settled_at DESC) WHERE result IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_games_game_id ON games(game_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sp_sport ON strategy_picks(sport)",
+    "CREATE INDEX IF NOT EXISTS idx_sp_game_id ON strategy_picks(game_id)",
+    "CREATE INDEX IF NOT EXISTS idx_predictions_game_id ON predictions(game_id)",
+    "CREATE INDEX IF NOT EXISTS idx_odds_game_id ON odds(game_id)",
   ];
   await Promise.allSettled(indexes.map((sql) => query(sql)));
 }
@@ -180,18 +184,20 @@ export async function getGateStatus() {
 
 // ── Data stats ──
 export async function getDataStats() {
-  const tables = ["games", "strategy_picks", "predictions", "subgame_predictions",
-                  "elo_ratings", "odds", "nfl_quarter_scores", "nba_quarter_scores"];
-
-  const results = await Promise.allSettled(
-    tables.map(async (table) => {
-      const row = await queryOne<{ count: number }>(`SELECT COUNT(*) as count FROM ${table}`);
-      return { table, count: Number(row?.count ?? 0) };
-    })
-  );
-  return results.map((r, i) =>
-    r.status === "fulfilled" ? r.value : { table: tables[i], count: 0 }
-  );
+  // Single query instead of 8 separate COUNT(*) calls — much cheaper on Neon
+  const rows = await query<{ table_name: string; row_count: number }>(`
+    SELECT
+      schemaname || '.' || relname AS table_name,
+      n_live_tup::int AS row_count
+    FROM pg_stat_user_tables
+    WHERE relname IN ('games','strategy_picks','predictions','subgame_predictions',
+                      'elo_ratings','odds','nfl_quarter_scores','nba_quarter_scores')
+    ORDER BY relname
+  `);
+  return rows.map((r) => ({
+    table: String(r.table_name).replace("public.", ""),
+    count: Number(r.row_count ?? 0),
+  }));
 }
 
 // ── Alerts ──
@@ -431,6 +437,7 @@ export async function getModelHealth() {
       MAX(game_date) AS last_bet
     FROM strategy_picks
     WHERE result IS NOT NULL AND predicted_value IS NOT NULL
+      AND game_date >= (CURRENT_DATE - INTERVAL '180 days')::text
     GROUP BY strategy, sport
     ORDER BY n DESC
   `);

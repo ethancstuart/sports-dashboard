@@ -10,7 +10,7 @@ export async function GET(
     const picks = await getStrategyDetail(name);
     return NextResponse.json(picks);
   } catch (error) {
-    console.error("GET /api/strategy/[name] error:", error);
+    console.error("GET /api/strategy/[name] error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch strategy detail" },
       { status: 500 }

@@ -6,7 +6,7 @@ export async function GET() {
     const results = await getShadowResults();
     return NextResponse.json(results);
   } catch (error) {
-    console.error("GET /api/shadow error:", error);
+    console.error("GET /api/shadow error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch shadow results" },
       { status: 500 }

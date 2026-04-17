@@ -8,7 +8,7 @@ export async function GET() {
       headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" },
     });
   } catch (error) {
-    console.error("GET /api/settlements error:", error);
+    console.error("GET /api/settlements error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch settlements" },
       { status: 500 }

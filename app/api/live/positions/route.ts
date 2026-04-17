@@ -196,7 +196,7 @@ export async function GET() {
       }
     );
   } catch (error) {
-    console.error("Live positions error:", error);
+    console.error("Live positions error:", String(error));
     return NextResponse.json({ error: "Failed to fetch live positions" }, { status: 500 });
   }
 }

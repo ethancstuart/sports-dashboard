@@ -6,7 +6,7 @@ export async function GET() {
     const models = await getModels();
     return NextResponse.json(models);
   } catch (error) {
-    console.error("GET /api/models error:", error);
+    console.error("GET /api/models error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch model registry" },
       { status: 500 }

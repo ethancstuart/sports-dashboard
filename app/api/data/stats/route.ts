@@ -12,7 +12,7 @@ export async function GET() {
     ]);
     return NextResponse.json({ stats, freshness });
   } catch (error) {
-    console.error("GET /api/data/stats error:", error);
+    console.error("GET /api/data/stats error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch data stats" },
       { status: 500 }

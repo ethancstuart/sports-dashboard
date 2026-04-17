@@ -83,7 +83,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("Governance API error:", error);
+    console.error("Governance API error:", String(error));
     return NextResponse.json({ error: "Failed to fetch governance data" }, { status: 500 });
   }
 }

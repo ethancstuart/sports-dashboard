@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const results = await getResultsByDate(date);
     return NextResponse.json(results);
   } catch (error) {
-    console.error("GET /api/results error:", error);
+    console.error("GET /api/results error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch results" },
       { status: 500 }

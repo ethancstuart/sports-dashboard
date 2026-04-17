@@ -11,7 +11,7 @@ export async function GET() {
       headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
     });
   } catch (error) {
-    console.error("GET /api/summary error:", error);
+    console.error("GET /api/summary error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch portfolio summary" },
       { status: 500 }

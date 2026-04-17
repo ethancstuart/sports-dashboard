@@ -8,7 +8,7 @@ export async function GET() {
       headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
     });
   } catch (error) {
-    console.error("GET /api/strategies error:", error);
+    console.error("GET /api/strategies error:", String(error));
     return NextResponse.json(
       { error: "Failed to fetch strategy performance" },
       { status: 500 }
