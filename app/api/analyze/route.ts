@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { spawn } from "node:child_process";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Hosted API URL (Fly.io / Render / local Flask)
+// Falls back to local subprocess if not set.
+const ANALYZE_API_URL = process.env.ANALYZE_API_URL || "";
+const ANALYZE_API_KEY = process.env.ANALYZE_API_KEY || "";
+
+// Local subprocess fallback
 const PIPELINE_DIR =
   process.env.SPORTS_PIPELINE_DIR ||
   "C:/Users/ethan/Projects/sports-ml-pipeline";
@@ -32,10 +37,35 @@ interface AnalyzeResult {
   [key: string]: unknown;
 }
 
+// ── Hosted API path ──────────────────────────────────────────────
+
+async function callHostedApi(
+  query: string,
+  sportHint: string | null
+): Promise<AnalyzeResult | null> {
+  const res = await fetch(`${ANALYZE_API_URL}/api/analyze`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(ANALYZE_API_KEY
+        ? { Authorization: `Bearer ${ANALYZE_API_KEY}` }
+        : {}),
+    },
+    body: JSON.stringify({ query, sport: sportHint }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    console.error("Hosted analyzer returned", res.status);
+    return null;
+  }
+
+  return (await res.json()) as AnalyzeResult;
+}
+
+// ── Local subprocess fallback ────────────────────────────────────
+
 function extractJson(stdout: string): unknown | null {
-  // The python CLI may print log lines or progress before emitting JSON.
-  // Grab the first '{' ... matching '}' block via a simple brace counter
-  // (ignores braces inside strings).
   const start = stdout.indexOf("{");
   if (start < 0) return null;
 
@@ -77,10 +107,18 @@ function extractJson(stdout: string): unknown | null {
   return null;
 }
 
-function runAnalyze(
+function runLocalAnalyze(
   query: string,
   sportHint: string | null
-): Promise<{ result: AnalyzeResult | null; stdout: string; stderr: string; code: number }> {
+): Promise<{
+  result: AnalyzeResult | null;
+  stderr: string;
+  code: number;
+}> {
+  // Dynamic import — only needed for local fallback
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { spawn } = require("node:child_process");
+
   return new Promise((resolve) => {
     const args = ["-m", "src.engine", "analyze", query];
     if (sportHint) args.push("--sport", sportHint);
@@ -99,28 +137,29 @@ function runAnalyze(
     let stdout = "";
     let stderr = "";
 
-    proc.stdout.on("data", (d) => {
+    proc.stdout.on("data", (d: Buffer) => {
       stdout += d.toString("utf8");
     });
-    proc.stderr.on("data", (d) => {
+    proc.stderr.on("data", (d: Buffer) => {
       stderr += d.toString("utf8");
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", (err: Error) => {
       resolve({
         result: null,
-        stdout,
         stderr: stderr + "\n" + String(err),
         code: -1,
       });
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code: number | null) => {
       const parsed = extractJson(stdout) as AnalyzeResult | null;
-      resolve({ result: parsed, stdout, stderr, code: code ?? 0 });
+      resolve({ result: parsed, stderr, code: code ?? 0 });
     });
   });
 }
+
+// ── Route handlers ───────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   let body: AnalyzeBody;
@@ -148,10 +187,24 @@ export async function POST(req: NextRequest) {
       ? sportHintRaw
       : null;
 
-  const { result, stderr, code } = await runAnalyze(query, sportHint);
+  // Try hosted API first, fall back to local subprocess
+  if (ANALYZE_API_URL) {
+    try {
+      const result = await callHostedApi(query, sportHint);
+      if (result) {
+        return NextResponse.json(result, {
+          headers: { "Cache-Control": "no-store" },
+        });
+      }
+    } catch (err) {
+      console.error("Hosted API call failed, falling back to local:", err);
+    }
+  }
+
+  // Local subprocess fallback
+  const { result, stderr, code } = await runLocalAnalyze(query, sportHint);
 
   if (!result) {
-    // Log full error server-side; return sanitized message to client
     console.error("Analyze failed:", { code, stderr: stderr.slice(-500) });
     return NextResponse.json(
       {
@@ -172,5 +225,6 @@ export async function GET() {
     service: "ad-hoc bet analyzer",
     method: "POST",
     body: { query: "string", sport_hint: "mlb|nba|nfl|ncaaf|null" },
+    backend: ANALYZE_API_URL ? "hosted" : "local",
   });
 }
