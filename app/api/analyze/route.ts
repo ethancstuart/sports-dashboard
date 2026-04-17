@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       ? sportHintRaw
       : null;
 
-  const { result, stdout, stderr, code } = await runAnalyze(query, sportHint);
+  const { result, stderr, code } = await runAnalyze(query, sportHint);
 
   if (!result) {
     // Log full error server-side; return sanitized message to client
