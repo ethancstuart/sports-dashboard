@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       where = `WHERE sport = $1`;
     }
 
-    // Order by most recent first
+    // Order by most recent first — whitelist column + direction to prevent injection
     const dateCol = columns.find(
       (c) =>
         c.column_name === "game_date" ||
@@ -106,7 +106,16 @@ export async function GET(request: NextRequest) {
         c.column_name === "created_at" ||
         c.column_name === "as_of_date"
     );
-    const order = orderBy || (dateCol ? `${dateCol.column_name} DESC` : "1 DESC");
+    const allowedOrderCols = new Set(columns.map((c) => c.column_name));
+    let order = dateCol ? `${dateCol.column_name} DESC` : "1 DESC";
+    if (orderBy) {
+      // Parse "column_name ASC|DESC" and validate
+      const match = orderBy.match(/^(\w+)\s*(ASC|DESC)?$/i);
+      if (match && allowedOrderCols.has(match[1])) {
+        order = `${match[1]} ${(match[2] ?? "DESC").toUpperCase()}`;
+      }
+      // else: ignore invalid orderBy, use default
+    }
 
     const rows = await query(
       `SELECT * FROM ${table} ${where} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`

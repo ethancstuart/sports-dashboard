@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const query = (body.query ?? "").trim();
+  const query = (body.query ?? "").trim().slice(0, 2000);
   if (!query) {
     return NextResponse.json(
       { error: "query is required" },
@@ -151,12 +151,12 @@ export async function POST(req: NextRequest) {
   const { result, stdout, stderr, code } = await runAnalyze(query, sportHint);
 
   if (!result) {
+    // Log full error server-side; return sanitized message to client
+    console.error("Analyze failed:", { code, stderr: stderr.slice(-500) });
     return NextResponse.json(
       {
-        error: "Analyzer failed",
+        error: "Analyzer failed — check server logs for details",
         code,
-        stderr: stderr.slice(-2000),
-        stdout: stdout.slice(-2000),
       },
       { status: 500 }
     );
