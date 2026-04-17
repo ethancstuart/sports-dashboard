@@ -2,9 +2,9 @@ import { Pool } from "@neondatabase/serverless";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10,
+  max: 5,             // Neon serverless — keep low to avoid "too many clients"
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
+  connectionTimeoutMillis: 3_000,
 });
 
 export type Row = Record<string, unknown>;

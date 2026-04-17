@@ -90,11 +90,17 @@ export default function HomePage() {
    ────────────────────────────────────────────────────────────*/
 
 function Header() {
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  // Defer date render to client-only to avoid SSR/CSR hydration mismatch
+  const [today, setToday] = useState("");
+  useEffect(() => {
+    setToday(
+      new Date().toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })
+    );
+  }, []);
   return (
     <div className="flex items-end justify-between border-b border-border pb-4">
       <div>

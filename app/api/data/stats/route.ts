@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getDataStats, getDataFreshness } from "@/lib/queries";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const [stats, freshness] = await Promise.all([

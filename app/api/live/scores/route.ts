@@ -24,7 +24,10 @@ interface LiveGame {
 
 async function fetchSport(sport: string): Promise<LiveGame[]> {
   try {
-    const res = await fetch(SPORT_ENDPOINTS[sport], { next: { revalidate: 30 } });
+    const res = await fetch(SPORT_ENDPOINTS[sport], {
+      next: { revalidate: 30 },
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) return [];
     const data = await res.json();
     const events = data.events ?? [];
