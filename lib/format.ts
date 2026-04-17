@@ -38,7 +38,9 @@ export function pnlColor(n: number | null | undefined): string {
 /** Format a date string to readable */
 export function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
-  return new Date(d + "T00:00:00").toLocaleDateString("en-US", {
+  const parsed = new Date(d + "T00:00:00");
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });

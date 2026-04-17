@@ -1,11 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getPicksBySport, getStrategyPerformanceBySport } from "@/lib/queries";
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const SPORT_RE = /^[a-z]{2,5}$/;
+
 export async function GET(request: NextRequest) {
   try {
     const date = request.nextUrl.searchParams.get("date");
     const sport = request.nextUrl.searchParams.get("sport");
-    if (!date || !sport) {
+    if (!date || !sport || !DATE_RE.test(date) || !SPORT_RE.test(sport)) {
       return NextResponse.json(
         { error: "Missing required parameters: date, sport" },
         { status: 400 }

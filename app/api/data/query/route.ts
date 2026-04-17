@@ -50,9 +50,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Add LIMIT if not present
-    const hasLimit = /\blimit\s+\d+/i.test(sql);
-    const safeSql = hasLimit ? sql : `${sql} LIMIT ${MAX_ROWS}`;
+    // Enforce LIMIT cap — user-supplied limits above MAX_ROWS are reduced
+    const limitMatch = sql.match(/\blimit\s+(\d+)/i);
+    let safeSql: string;
+    if (limitMatch) {
+      const userLimit = parseInt(limitMatch[1], 10);
+      safeSql = userLimit > MAX_ROWS
+        ? sql.replace(/\blimit\s+\d+/i, `LIMIT ${MAX_ROWS}`)
+        : sql;
+    } else {
+      safeSql = `${sql} LIMIT ${MAX_ROWS}`;
+    }
+    const hasLimit = !!limitMatch;
 
     const start = Date.now();
     const rows = await query(safeSql);
@@ -68,7 +77,10 @@ export async function POST(request: NextRequest) {
       elapsed,
     });
   } catch (error) {
+    console.error("POST /api/data/query error:", String(error));
     const msg = error instanceof Error ? error.message : "Query failed";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    // Strip connection strings from error messages
+    const safeMsg = msg.replace(/postgres(ql)?:\/\/[^\s]+/gi, "[REDACTED]");
+    return NextResponse.json({ error: safeMsg }, { status: 400 });
   }
 }

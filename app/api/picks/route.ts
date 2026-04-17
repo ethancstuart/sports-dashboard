@@ -1,10 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getActionablePicks } from "@/lib/queries";
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function GET(request: NextRequest) {
   try {
     const date = request.nextUrl.searchParams.get("date");
-    if (!date) {
+    if (!date || !DATE_RE.test(date)) {
       return NextResponse.json(
         { error: "Missing required parameter: date" },
         { status: 400 }
