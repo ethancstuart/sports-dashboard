@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MarkPlacedButton } from "@/components/placements/mark-placed-button";
 import {
   fmtPct,
   fmtOdds,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
    ────────────────────────────────────────────────────────────*/
 
 interface Pick {
+  pick_id: number;
   game_id: string;
   game_date: string;
   strategy: string;
@@ -27,6 +29,7 @@ interface Pick {
   edge: number | null;
   kelly_size: number | null;
   book_odds: number | null;
+  book_line: number | null;
   predicted_value: number | null;
   home_team_id: string | null;
   away_team_id: string | null;
@@ -278,6 +281,13 @@ function PickRow({ pick }: { pick: Pick }) {
               : "—"}
           </div>
         </div>
+        <MarkPlacedButton
+          pickId={pick.pick_id}
+          defaultOdds={pick.book_odds ?? undefined}
+          defaultLine={pick.book_line ?? undefined}
+          strategyLabel={displayStrategy(pick.strategy)}
+          disabled={pick.result != null}
+        />
       </div>
     </li>
   );
