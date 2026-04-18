@@ -224,6 +224,8 @@ export async function getShadowResults() {
 }
 
 // ── Actionable picks (today, with tier) ──
+// Excludes picks the user has already placed — once marked, they go
+// into /placements and shouldn't clutter the "pick something" surface.
 export async function getActionablePicks(date: string) {
   return query(`
     SELECT sp.*,
@@ -235,6 +237,9 @@ export async function getActionablePicks(date: string) {
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
     WHERE sp.game_date = $1
+      AND NOT EXISTS (
+          SELECT 1 FROM placed_bets pb WHERE pb.pick_id = sp.pick_id
+      )
     ORDER BY
       CASE WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 0 ELSE 1 END,
       sp.kelly_size DESC NULLS LAST,
@@ -288,6 +293,8 @@ export async function getSimilarSpots(strategy: string, confidence: number, rang
 }
 
 // ── Picks by sport for a date ──
+// Excludes already-placed picks so the home page rotates through what's
+// left to decide on, not what's already decided.
 export async function getPicksBySport(date: string, sport: string) {
   return query(`
     SELECT sp.*,
@@ -300,6 +307,9 @@ export async function getPicksBySport(date: string, sport: string) {
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
     WHERE sp.game_date = $1 AND sp.sport = $2
+      AND NOT EXISTS (
+          SELECT 1 FROM placed_bets pb WHERE pb.pick_id = sp.pick_id
+      )
     ORDER BY
       CASE
         WHEN sp.edge > 0.04 AND sp.kelly_size > 0.01 THEN 0
