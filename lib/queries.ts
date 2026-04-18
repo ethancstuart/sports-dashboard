@@ -456,3 +456,47 @@ export async function getHealthReport() {
     return null;
   }
 }
+
+// ── Decision Ledger: the bets the user actually placed ──
+// Every realized-CLV computation needs line_taken + odds_taken from
+// the book the user actually used, not the pipeline's snapshot at
+// pick-creation. Without this the "CLV" shown on the dashboard is
+// the model's hypothetical; with this it's the bettor's bankroll truth.
+
+export async function markPickPlaced(args: {
+  pick_id: number;
+  book: string;
+  stake: number;
+  line_taken: number | null;
+  odds_taken: number | null;
+  notes: string | null;
+}): Promise<number> {
+  const row = await queryOne<{ placement_id: number }>(
+    `INSERT INTO placed_bets
+       (pick_id, book, stake, line_taken, odds_taken, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING placement_id`,
+    [args.pick_id, args.book, args.stake, args.line_taken, args.odds_taken, args.notes],
+  );
+  if (!row) {
+    throw new Error("INSERT into placed_bets did not return a placement_id");
+  }
+  return row.placement_id;
+}
+
+export async function listRecentPlacements(limit: number = 50) {
+  return query(
+    `SELECT pb.placement_id, pb.pick_id, pb.placed_at, pb.book,
+            pb.line_taken, pb.odds_taken, pb.stake, pb.notes,
+            pb.settled_result, pb.realized_pnl, pb.realized_clv,
+            sp.strategy, sp.bet_side, sp.game_date, sp.book_odds,
+            sp.edge, sp.result, sp.clv,
+            g.home_team_id, g.away_team_id
+     FROM placed_bets pb
+     JOIN strategy_picks sp ON sp.pick_id = pb.pick_id
+     LEFT JOIN games g ON g.game_id = sp.game_id
+     ORDER BY pb.placed_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+}
