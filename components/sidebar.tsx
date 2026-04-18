@@ -12,6 +12,7 @@ import {
   Activity,
   Terminal,
   Sparkles,
+  NotebookPen,
   Menu,
   X,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { useState } from "react";
 const NAV = [
   { href: "/", label: "Today", icon: LayoutDashboard },
   { href: "/live", label: "Live", icon: Radio },
+  { href: "/placements", label: "My Bets", icon: NotebookPen },
   { href: "/analyze", label: "Analyze", icon: Sparkles },
   { href: "/audit", label: "Prediction Audit", icon: Search },
   { href: "/models", label: "Model Registry", icon: Cpu },
