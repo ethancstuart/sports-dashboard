@@ -422,6 +422,9 @@ export async function getDailyPlanPicks(date: string) {
        AND sp.edge IS NOT NULL
        AND sp.strategy NOT LIKE '%player%'
        AND sp.strategy NOT LIKE '%prop%'
+       AND NOT EXISTS (
+           SELECT 1 FROM placed_bets pb WHERE pb.pick_id = sp.pick_id
+       )
   `, [date]);
 }
 

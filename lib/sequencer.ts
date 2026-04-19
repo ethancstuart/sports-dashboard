@@ -25,6 +25,14 @@ export const HIGH_EDGE = 0.08;
 export const MED_EDGE = 0.04;
 export const UNIT_DOLLARS = 100;
 
+// Edges above this are statistically suspicious at -110 odds. Surfaced
+// in wave notes; not filtered.
+export const SUSPICIOUS_EDGE = 0.25;
+
+// Cap a single pick at this fraction of wave bankroll. With 2+ picks the
+// cap never bites; with 1 pick it limits stake to 50% bankroll.
+export const MAX_PICK_BANKROLL_FRACTION = 0.5;
+
 export const USER_TZ =
   process.env.NEXT_PUBLIC_DAILY_PLAY_TZ ?? "America/Los_Angeles";
 
@@ -245,6 +253,19 @@ export function buildPickFromRow(row: RawPickRow): SequencerPick | null {
   };
 }
 
+/** Walk sorted picks, take at most one per game_id (concentration guard). */
+function takeOnePerGame(picks: SequencerPick[], limit: number): SequencerPick[] {
+  const seen = new Set<string>();
+  const out: SequencerPick[] = [];
+  for (const p of picks) {
+    if (seen.has(p.game_id)) continue;
+    seen.add(p.game_id);
+    out.push(p);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /** Choose picks for one wave + return notes (D4 fallback). */
 function selectForWave(
   candidates: SequencerPick[],
@@ -254,19 +275,31 @@ function selectForWave(
   if (candidates.length === 0) {
     return { picks: [], notes: "no picks for this wave" };
   }
-  const highMed = candidates.filter(p => p.confidence === "HIGH" || p.confidence === "MED");
+
+  const noteParts: string[] = [];
+  const suspect = candidates.filter((p) => p.edge >= SUSPICIOUS_EDGE);
+  if (suspect.length > 0) {
+    noteParts.push(
+      `WARN: ${suspect.length} pick(s) edge >= ${(SUSPICIOUS_EDGE * 100).toFixed(0)}% — verify line freshness`,
+    );
+  }
+
+  const highMed = candidates.filter((p) => p.confidence === "HIGH" || p.confidence === "MED");
   if (highMed.length > 0) {
     if (waveId === "W1") {
       highMed.sort((a, b) =>
-        b.edge - a.edge || a.estimated_settle_iso.localeCompare(b.estimated_settle_iso));
+        b.edge - a.edge ||
+        a.estimated_settle_iso.localeCompare(b.estimated_settle_iso));
     } else {
       highMed.sort((a, b) => b.edge - a.edge);
     }
-    return { picks: highMed.slice(0, maxPicks), notes: "" };
+    return { picks: takeOnePerGame(highMed, maxPicks), notes: noteParts.join(" · ") };
   }
-  // D4 fallback
+
+  // D4 fallback: best LOW with explicit warning
   candidates.sort((a, b) => b.edge - a.edge);
-  return { picks: candidates.slice(0, 1), notes: "below threshold — best available shown" };
+  noteParts.unshift("below threshold — best available shown");
+  return { picks: takeOnePerGame(candidates, 1), notes: noteParts.join(" · ") };
 }
 
 export interface BuildPlanOpts {
@@ -294,7 +327,13 @@ export function buildDailyPlan(opts: BuildPlanOpts): DailyPlan {
     const { picks, notes } = selectForWave(bucket[wid], wid, maxPicksPerWave);
     // For Phase 1: bankroll passed forward unchanged. Mid-day re-runs
     // on the API will recompute current_bankroll from realized PnL.
-    const stake = picks.length > 0 ? Number((currentBankroll / picks.length).toFixed(2)) : 0;
+    // Cap any single pick at MAX_PICK_BANKROLL_FRACTION of bankroll.
+    let stake = 0;
+    if (picks.length > 0) {
+      const flatSplit = currentBankroll / picks.length;
+      const maxStake = currentBankroll * MAX_PICK_BANKROLL_FRACTION;
+      stake = Number(Math.min(flatSplit, maxStake).toFixed(2));
+    }
     return {
       wave_id: wid,
       issue_time_iso: waveIssueTime(opts.planDate, wid).toISOString(),
