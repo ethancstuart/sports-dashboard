@@ -2,10 +2,14 @@
  * Daily wave sequencer — TypeScript port of src/sequencer.py
  * (sports-ml-pipeline). Keep these two files in sync.
  *
- * Wave windows (Eastern Time):
- *   W1 — issued 09:00 ET, covers games settling by 17:00 ET
- *   W2 — issued 17:00 ET, covers games settling 17:00 — 21:00 ET
- *   W3 — issued 21:00 ET, covers games settling after 21:00 ET
+ * Wave windows are in the USER's local TZ (default Pacific) so W1
+ * fires when the user wakes up. Game settle times remain in ET.
+ *
+ *   W1 — issued 09:00 user-local
+ *   W2 — issued 17:00 user-local
+ *   W3 — issued 21:00 user-local
+ *
+ * Override user TZ via NEXT_PUBLIC_DAILY_PLAY_TZ (IANA name).
  *
  * Confidence tiers (from edge field):
  *   HIGH: edge >= 8%
@@ -20,6 +24,9 @@ export const DAILY_GOAL = 1000;
 export const HIGH_EDGE = 0.08;
 export const MED_EDGE = 0.04;
 export const UNIT_DOLLARS = 100;
+
+export const USER_TZ =
+  process.env.NEXT_PUBLIC_DAILY_PLAY_TZ ?? "America/Los_Angeles";
 
 export const WAVE_W1_HOUR = 9;
 export const WAVE_W2_HOUR = 17;
@@ -118,22 +125,18 @@ export function isCuratedMarket(strategy: string, marketType: string): boolean {
 }
 
 /**
- * Build a Date for the given ET hour on the plan date.
- * Plan date is YYYY-MM-DD; ET is UTC-5 (EST) or UTC-4 (EDT).
- * We use a portable "compute offset for this date" approach via toLocaleString.
+ * Build a Date that represents `planDate hour:00:00` in the given IANA TZ.
+ * Uses Intl to compute the TZ offset on that exact moment (handles DST).
  */
-function etDateAt(planDate: string, hour: number): Date {
-  // Construct a date that represents "planDate hour:00 in America/New_York"
-  // by anchoring through Intl. Done via the trick of formatting an arbitrary
-  // UTC date in the target zone and computing the offset.
+function dateInTz(planDate: string, hour: number, tz: string): Date {
   const utcAnchor = new Date(`${planDate}T${String(hour).padStart(2, "0")}:00:00Z`);
-  // tzString gives e.g. "GMT-04:00" — parse the offset
-  const tz = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+  const offsetStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
     timeZoneName: "longOffset",
-  }).formatToParts(utcAnchor)
-    .find(p => p.type === "timeZoneName")?.value ?? "GMT-05:00";
-  const m = tz.match(/GMT([+-])(\d{2}):?(\d{2})?/);
+  })
+    .formatToParts(utcAnchor)
+    .find((p) => p.type === "timeZoneName")?.value ?? "GMT-05:00";
+  const m = offsetStr.match(/GMT([+-])(\d{2}):?(\d{2})?/);
   const sign = m?.[1] === "+" ? 1 : -1;
   const offH = parseInt(m?.[2] ?? "5", 10);
   const offM = parseInt(m?.[3] ?? "0", 10);
@@ -143,14 +146,14 @@ function etDateAt(planDate: string, hour: number): Date {
 
 export function estimateSettleTime(gameDate: string, sport: string): Date {
   const hour = SPORT_DEFAULT_SETTLE_HOUR[(sport || "").toLowerCase()] ?? 22;
-  return etDateAt(gameDate, hour);
+  return dateInTz(gameDate, hour, "America/New_York");
 }
 
 export function waveIssueTime(planDate: string, waveId: WaveId): Date {
   const hour = waveId === "W1" ? WAVE_W1_HOUR
              : waveId === "W2" ? WAVE_W2_HOUR
              : WAVE_W3_HOUR;
-  return etDateAt(planDate, hour);
+  return dateInTz(planDate, hour, USER_TZ);
 }
 
 export function assignToWave(settleEt: Date, planDate: string): WaveId {
