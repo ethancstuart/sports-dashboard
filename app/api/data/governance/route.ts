@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 
+
+// Force dynamic rendering — this route hits Neon Postgres at request time;
+// without force-dynamic, Next.js tries to statically render at build and fails
+// on preview branches that don't have DATABASE_URL set.
+export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     // Pipeline execution log (from ingestion_log)

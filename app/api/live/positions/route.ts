@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
+// Force dynamic rendering — this route hits Neon Postgres at request time;
+// without force-dynamic, Next.js tries to statically render at build and fails
+// on preview branches that don't have DATABASE_URL set.
+export const dynamic = 'force-dynamic';
+
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";
 const SPORT_ENDPOINTS: Record<string, string> = {
   mlb: `${ESPN_BASE}/baseball/mlb/scoreboard`,

@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getGameAudit } from "@/lib/queries";
 
+// Force dynamic rendering — this route hits Neon Postgres at request time;
+// without force-dynamic, Next.js tries to statically render at build and fails
+// on preview branches that don't have DATABASE_URL set.
+export const dynamic = 'force-dynamic';
+
 // gameId format: alphanumeric + hyphens + underscores, 1-64 chars
 const GAME_ID_RE = /^[\w-]{1,64}$/;
 
