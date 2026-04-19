@@ -1,601 +1,252 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MarkPlacedButton } from "@/components/placements/mark-placed-button";
-import {
-  fmtPct,
-  fmtOdds,
-  displayStrategy,
-  betInstruction,
-  edgeTier,
-  strategySort,
-} from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
+import { BankrollHero } from "@/components/daily-play/BankrollHero";
+import { WaveCard } from "@/components/daily-play/WaveCard";
 import { localToday } from "@/lib/constants";
+import type { DailyPlan, WaveId } from "@/lib/sequencer";
 import { cn } from "@/lib/utils";
 
-/* ────────────────────────────────────────────────────────────
-   Types
-   ────────────────────────────────────────────────────────────*/
-
-interface Pick {
+interface SettledPick {
   pick_id: number;
-  game_id: string;
-  game_date: string;
-  strategy: string;
   sport: string;
+  strategy: string;
+  game_id: string;
   bet_side: string | null;
   edge: number | null;
-  kelly_size: number | null;
-  book_odds: number | null;
   book_line: number | null;
-  predicted_value: number | null;
+  book_odds: number | null;
+  result: "win" | "loss" | "push" | null;
+  pnl: number | null;
+  settled_at: string | null;
   home_team_id: string | null;
   away_team_id: string | null;
-  result: string | null;
-  // ── AI rationale / EW Score (from JOIN on pick_rationales) ──
-  rationale: string | null;
-  risks_json: string | null;
-  confidence: "low" | "medium" | "high" | null;
-  confidence_adj: number | null;
-  one_liner: string | null;
-  ew_score: number | null;
-  ew_tier: "BET" | "LEAN" | "WATCH" | null;
-  [key: string]: unknown;
 }
 
-interface ModelHealthRow {
-  strategy: string;
-  sport: string;
-  n: number;
-  wins: number;
-  losses: number;
-  pushes: number;
-  actual_wr: number | null;
-  breakeven_wr: number | null;
-  avg_pred: number | null;
-  brier: number | null;
-  avg_clv: number | null;
-  avg_edge: number | null;
-  total_pnl: number;
-  last_bet: string | null;
+interface DailyPlanResponse {
+  plan: DailyPlan;
+  settled: SettledPick[];
+  meta: {
+    date: string;
+    starting_bankroll: number;
+    current_bankroll: number;
+    realized_pnl_units: number;
+    unit_dollars: number;
+    total_picks: number;
+    generated_at: string;
+  };
 }
-
-/* ────────────────────────────────────────────────────────────
-   Constants
-   ────────────────────────────────────────────────────────────*/
-
-const SPORTS = ["MLB", "NBA", "NFL"] as const;
-type Sport = (typeof SPORTS)[number];
-
-const TIER_STYLES: Record<"BET" | "LEAN" | "WATCH", string> = {
-  BET: "bg-[var(--bet)] text-white",
-  LEAN: "bg-[var(--lean)]/15 text-[var(--lean)] ring-1 ring-[var(--lean)]/30",
-  WATCH:
-    "bg-[var(--watch)]/10 text-[var(--watch)] ring-1 ring-[var(--watch)]/20",
-};
-
-/* ────────────────────────────────────────────────────────────
-   Page
-   ────────────────────────────────────────────────────────────*/
 
 export default function HomePage() {
+  const [data, setData] = useState<DailyPlanResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/daily-plan?date=${localToday()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as DailyPlanResponse;
+        if (!cancelled) setData(json);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    const id = setInterval(load, 60_000); // refresh every 60s
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6">
-      <Header />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <TodaysPicks />
-        </div>
-        <div className="lg:col-span-2">
-          <ModelHealth />
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1100px] space-y-6">
+      <Header date={data?.meta.date ?? localToday()} />
+
+      {loading && !data ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState error={error} />
+      ) : data ? (
+        <>
+          <BankrollHero
+            startingBankroll={data.meta.starting_bankroll}
+            currentBankroll={data.meta.current_bankroll}
+            dailyGoal={data.plan.daily_goal}
+            realizedPnlUnits={data.meta.realized_pnl_units}
+            unitDollars={data.meta.unit_dollars}
+          />
+
+          <RulesBanner />
+
+          <div className="space-y-3">
+            {data.plan.waves.map((wave) => {
+              const isActive = wave.wave_id === data.plan.active_wave_id;
+              const order: WaveId[] = ["W1", "W2", "W3"];
+              const isPast =
+                order.indexOf(wave.wave_id) <
+                order.indexOf(data.plan.active_wave_id);
+              return (
+                <WaveCard
+                  key={wave.wave_id}
+                  wave={wave}
+                  isActive={isActive}
+                  isPast={isPast}
+                />
+              );
+            })}
+          </div>
+
+          <SettledFeed settled={data.settled} />
+        </>
+      ) : null}
     </div>
   );
 }
 
-/* ────────────────────────────────────────────────────────────
-   Header
-   ────────────────────────────────────────────────────────────*/
-
-function Header() {
-  // Defer date render to client-only to avoid SSR/CSR hydration mismatch
-  const [today, setToday] = useState("");
-  useEffect(() => {
-    setToday(
-      new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      })
-    );
-  }, []);
+function Header({ date }: { date: string }) {
   return (
-    <div className="flex items-end justify-between border-b border-border pb-4">
+    <div className="flex items-end justify-between gap-4 flex-wrap">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">EdgeWatch</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">{today}</p>
-      </div>
-      <div className="text-right text-xs text-muted-foreground">
-        <div>Model performance — not P&amp;L</div>
-        <div className="tabular-nums">Updated live from DB</div>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          EdgeWatch
+        </div>
+        <h1 className="mt-1 font-mono text-2xl font-bold tracking-tight">
+          Daily Play
+        </h1>
+        <div className="text-sm text-muted-foreground">
+          Turn $200 into $1,000 today.{" "}
+          <span className="font-mono text-xs">{date}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ────────────────────────────────────────────────────────────
-   LEFT COLUMN — Today's picks, grouped by sport
-   ────────────────────────────────────────────────────────────*/
-
-function TodaysPicks() {
-  const [sport, setSport] = useState<Sport>("MLB");
-  const [picks, setPicks] = useState<Pick[] | null>(null);
-
-  useEffect(() => {
-    const ctl = new AbortController();
-    setPicks(null);
-    fetch(`/api/sport-picks?date=${localToday()}&sport=${sport.toLowerCase()}`, {
-      signal: ctl.signal,
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setPicks(Array.isArray(data.picks) ? data.picks : []);
-      })
-      .catch(() => setPicks([]));
-    return () => ctl.abort();
-  }, [sport]);
-
-  const grouped = useMemo(() => {
-    if (!picks) return [];
-    const byGame = new Map<string, Pick[]>();
-    for (const p of picks) {
-      const key = `${p.away_team_id ?? "?"} @ ${p.home_team_id ?? "?"}`;
-      const arr = byGame.get(key) ?? [];
-      arr.push(p);
-      byGame.set(key, arr);
-    }
-    // Sort games by their best (highest-edge) pick
-    return Array.from(byGame.entries()).sort(([, a], [, b]) => {
-      const aMax = Math.max(...a.map((p) => p.edge ?? 0));
-      const bMax = Math.max(...b.map((p) => p.edge ?? 0));
-      return bMax - aMax;
-    });
-  }, [picks]);
-
+function RulesBanner() {
   return (
-    <Card className="h-full">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div>
-          <CardTitle className="text-base font-semibold">
-            Today&rsquo;s Picks
+    <div className="rounded-md border border-amber-500/30 bg-amber-50/70 dark:bg-amber-950/10 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+      <span className="font-semibold">Daily Play rules:</span> $200 fresh each
+      morning · play waves straight through even if $1K hit · never chase if
+      behind · nightly sweep at 11:30 PM ET.
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-40 w-full" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-32 w-full" />
+    </div>
+  );
+}
+
+function ErrorState({ error }: { error: string }) {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="text-sm text-[var(--loss)]">
+          Failed to load Daily Play: {error}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function fmtSettleTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+function SettledFeed({ settled }: { settled: SettledPick[] }) {
+  if (settled.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="py-3 px-4 border-b">
+          <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">
+            Today’s Settled
           </CardTitle>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Plain-English bet instructions · sorted by edge
-          </p>
-        </div>
-        <div className="flex gap-1 rounded-md bg-muted p-1">
-          {SPORTS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSport(s)}
-              className={cn(
-                "rounded px-3 py-1 text-xs font-medium transition-colors",
-                sport === s
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {picks === null ? (
-          <LoadingRows rows={4} />
-        ) : grouped.length === 0 ? (
-          <EmptyState
-            title={`No ${sport} games on the slate`}
-            body="If you expected games today, check the Pipeline page or daily brief email."
-          />
-        ) : (
-          grouped.map(([matchup, gamePicks]) => (
-            <GameBlock
-              key={matchup}
-              matchup={matchup}
-              picks={gamePicks}
-            />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function GameBlock({ matchup, picks }: { matchup: string; picks: Pick[] }) {
-  const sorted = [...picks].sort((a, b) => strategySort(a.strategy, b.strategy));
-  return (
-    <div className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="text-sm font-semibold">{matchup}</div>
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {sorted.length} signal{sorted.length === 1 ? "" : "s"}
-        </div>
-      </div>
-      <ul className="divide-y divide-border">
-        {sorted.map((p, i) => (
-          <PickRow key={`${p.strategy}-${i}`} pick={p} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PickRow({ pick }: { pick: Pick }) {
-  // Prefer the server-computed EW tier (model edge × AI confidence × 30d WR).
-  // Falls back to raw-edge tier for picks not yet AI-enriched.
-  const tier: "BET" | "LEAN" | "WATCH" =
-    (pick.ew_tier as "BET" | "LEAN" | "WATCH" | null) ?? edgeTier(pick.edge);
-  const instruction = betInstruction(
-    pick.strategy,
-    pick.bet_side,
-    pick.home_team_id,
-    pick.away_team_id
-  );
-  const risks: string[] = (() => {
-    if (!pick.risks_json) return [];
-    try {
-      const parsed = JSON.parse(pick.risks_json);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
-    }
-  })();
-  return (
-    <li className="flex flex-col gap-2 px-4 py-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex min-w-[44px] items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                TIER_STYLES[tier]
-              )}
-            >
-              {tier}
-            </span>
-            {pick.ew_score != null && (
-              <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-foreground/80">
-                EW {Math.round(pick.ew_score)}
-              </span>
-            )}
-            <span className="truncate text-sm font-medium">{instruction}</span>
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            {displayStrategy(pick.strategy)}
-            {pick.book_odds != null && ` · ${fmtOdds(pick.book_odds)}`}
-            {pick.kelly_size != null &&
-              ` · Kelly ${fmtPct(pick.kelly_size, 1)}`}
-          </div>
-        </div>
-      <div className="flex items-center gap-4 tabular-nums">
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Edge
-          </div>
-          <div
-            className={cn(
-              "text-sm font-semibold",
-              (pick.edge ?? 0) > 0
-                ? "text-[var(--win)]"
-                : "text-muted-foreground"
-            )}
-          >
-            {fmtPct(pick.edge, 1)}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Conf
-          </div>
-          <div className="text-sm font-semibold">
-            {pick.predicted_value != null
-              ? fmtPct(pick.predicted_value, 0)
-              : "—"}
-          </div>
-        </div>
-        <MarkPlacedButton
-          pickId={pick.pick_id}
-          defaultOdds={pick.book_odds ?? undefined}
-          defaultLine={pick.book_line ?? undefined}
-          strategyLabel={displayStrategy(pick.strategy)}
-          disabled={pick.result != null}
-        />
-      </div>
-      </div>
-
-      {pick.rationale && (
-        <details className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
-          <summary className="flex cursor-pointer items-center gap-2 select-none">
-            <span
-              className={cn(
-                "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                pick.confidence === "high"
-                  ? "bg-[var(--win)]/15 text-[var(--win)]"
-                  : pick.confidence === "low"
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-[var(--lean)]/15 text-[var(--lean)]"
-              )}
-            >
-              AI · {pick.confidence ?? "medium"}
-            </span>
-            {(pick.confidence_adj ?? 0) > 0 && (
-              <span className="inline-flex items-center rounded bg-[var(--win)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--win)]">
-                BOOST
-              </span>
-            )}
-            {(pick.confidence_adj ?? 0) < 0 && (
-              <span className="inline-flex items-center rounded bg-[var(--loss)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--loss)]">
-                FADE
-              </span>
-            )}
-            <span className="flex-1 truncate text-muted-foreground">
-              {pick.one_liner ?? "Rationale"}
-            </span>
-          </summary>
-          <div className="mt-2 space-y-1.5 text-foreground/90">
-            <p className="leading-relaxed">{pick.rationale}</p>
-            {risks.length > 0 && (
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lean)]">
-                  Risks
-                </div>
-                <ul className="ml-4 list-disc space-y-0.5 text-muted-foreground">
-                  {risks.slice(0, 3).map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </details>
-      )}
-    </li>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────
-   RIGHT COLUMN — Model health (WR vs break-even, Brier, CLV)
-   ────────────────────────────────────────────────────────────*/
-
-function ModelHealth() {
-  const [rows, setRows] = useState<ModelHealthRow[] | null>(null);
-
-  useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/model-health", { signal: ctl.signal })
-      .then((r) => r.json())
-      .then((data) => setRows(Array.isArray(data) ? data : []))
-      .catch(() => setRows([]));
-    return () => ctl.abort();
-  }, []);
-
-  // Aggregate summary across all strategies with ≥20 bets
-  const summary = useMemo(() => {
-    if (!rows) return null;
-    const seasoned = rows.filter((r) => r.n >= 20);
-    const n = seasoned.reduce((s, r) => s + r.n, 0);
-    const wins = seasoned.reduce((s, r) => s + r.wins, 0);
-    const losses = seasoned.reduce((s, r) => s + r.losses, 0);
-    const decided = wins + losses;
-    const actual = decided > 0 ? wins / decided : 0;
-    const avgBreakeven =
-      seasoned.length > 0
-        ? seasoned.reduce((s, r) => s + (r.breakeven_wr ?? 0), 0) /
-          seasoned.length
-        : 0;
-    const brierVals = seasoned
-      .map((r) => r.brier)
-      .filter((b): b is number => b != null);
-    const brier =
-      brierVals.length > 0
-        ? brierVals.reduce((s, b) => s + b, 0) / brierVals.length
-        : null;
-    const clvVals = seasoned
-      .map((r) => r.avg_clv)
-      .filter((c): c is number => c != null);
-    const clv =
-      clvVals.length > 0
-        ? clvVals.reduce((s, c) => s + c, 0) / clvVals.length
-        : null;
-    return { n, actual, breakeven: avgBreakeven, brier, clv };
-  }, [rows]);
+        </CardHeader>
+        <CardContent className="p-4 text-sm italic text-muted-foreground">
+          Nothing settled yet — check back after the early games close.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold">
-          Model Health
+    <Card>
+      <CardHeader className="py-3 px-4 border-b">
+        <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">
+          Today’s Settled · {settled.length}
         </CardTitle>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Is the model still honest? WR vs break-even, calibration, CLV
-        </p>
       </CardHeader>
-      <CardContent className="space-y-5">
-        {/* Overall summary */}
-        {summary && summary.n > 0 ? (
-          <div className="grid grid-cols-3 gap-3">
-            <HealthTile
-              label="WR vs BE"
-              value={fmtPct(summary.actual - summary.breakeven, 1)}
-              sub={`${fmtPct(summary.actual, 1)} act · ${fmtPct(
-                summary.breakeven,
-                1
-              )} be`}
-              good={summary.actual > summary.breakeven}
-            />
-            <HealthTile
-              label="Brier"
-              value={summary.brier != null ? summary.brier.toFixed(3) : "—"}
-              sub="lower = sharper"
-              good={summary.brier != null && summary.brier < 0.25}
-            />
-            <HealthTile
-              label="CLV"
-              value={summary.clv != null ? fmtPct(summary.clv, 1) : "—"}
-              sub="mean closing-line value"
-              good={summary.clv != null && summary.clv > 0}
-            />
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground">
-            Not enough settled picks yet (need ≥20 per strategy to surface health signals).
-          </div>
-        )}
-
-        {/* Per-strategy breakdown */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              By Strategy
-            </h3>
-            <span className="text-[10px] text-muted-foreground">
-              {rows ? `${rows.length} strategies` : ""}
-            </span>
-          </div>
-          {rows === null ? (
-            <LoadingRows rows={6} />
-          ) : rows.length === 0 ? (
-            <EmptyState
-              title="No settled picks yet"
-              body="Health signals appear once picks settle."
-            />
-          ) : (
-            <div className="space-y-1.5">
-              {rows.map((r) => (
-                <StrategyHealthRow key={r.strategy} row={r} />
-              ))}
-            </div>
-          )}
+      <CardContent className="p-0">
+        <div className="divide-y">
+          {settled.map((s) => {
+            const resultClass =
+              s.result === "win"
+                ? "text-[var(--win)]"
+                : s.result === "loss"
+                  ? "text-[var(--loss)]"
+                  : "text-muted-foreground";
+            return (
+              <div
+                key={s.pick_id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-xs text-muted-foreground">
+                    {s.sport.toUpperCase()} · {fmtSettleTime(s.settled_at)} ET
+                  </div>
+                  <div className="font-mono truncate">
+                    {s.strategy.replace(/_/g, " ").toUpperCase()}{" "}
+                    {(s.bet_side ?? "").toUpperCase()}{" "}
+                    {s.away_team_id && s.home_team_id
+                      ? `· ${s.away_team_id} @ ${s.home_team_id}`
+                      : ""}
+                  </div>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn("font-mono uppercase", resultClass)}
+                >
+                  {s.result ?? "—"}
+                </Badge>
+                <div
+                  className={cn(
+                    "font-mono w-20 text-right tabular-nums",
+                    resultClass,
+                  )}
+                >
+                  {s.pnl !== null
+                    ? `${s.pnl > 0 ? "+" : ""}${s.pnl.toFixed(2)}u`
+                    : "—"}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function StrategyHealthRow({ row }: { row: ModelHealthRow }) {
-  const decided = row.wins + row.losses;
-  const wr = decided > 0 ? row.wins / decided : 0;
-  const be = row.breakeven_wr ?? 0;
-  const delta = wr - be;
-  const good = delta > 0;
-  const seasoned = row.n >= 20;
-  return (
-    <div className="group rounded-md border border-border/70 bg-card px-3 py-2 transition-colors hover:border-border">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">
-            {displayStrategy(row.strategy)}
-          </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
-            {row.n} bet{row.n === 1 ? "" : "s"} · {row.wins}W-{row.losses}L
-            {row.pushes > 0 && `-${row.pushes}P`}
-            {row.last_bet && ` · last ${row.last_bet.slice(5)}`}
-          </div>
-        </div>
-        <div className="text-right tabular-nums">
-          <div
-            className={cn(
-              "text-sm font-semibold",
-              !seasoned
-                ? "text-muted-foreground"
-                : good
-                ? "text-[var(--win)]"
-                : "text-[var(--loss)]"
-            )}
-          >
-            {seasoned
-              ? `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)}pp`
-              : "—"}
-          </div>
-          <div className="text-[10px] text-muted-foreground">
-            {fmtPct(wr, 1)} vs {fmtPct(be, 1)}
-          </div>
-        </div>
-      </div>
-      {/* WR vs breakeven bar */}
-      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-        <div className="flex h-full">
-          <div
-            className="h-full bg-muted-foreground/40"
-            style={{ width: `${Math.min(be * 100, 100)}%` }}
-          />
-          <div
-            className={cn(
-              "h-full",
-              good ? "bg-[var(--win)]" : "bg-[var(--loss)]"
-            )}
-            style={{
-              width: `${Math.min(Math.abs(delta) * 100, 100 - be * 100)}%`,
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────
-   Shared
-   ────────────────────────────────────────────────────────────*/
-
-function HealthTile({
-  label,
-  value,
-  sub,
-  good,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  good: boolean;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-card p-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </div>
-      <div
-        className={cn(
-          "mt-1 text-xl font-semibold tabular-nums",
-          good ? "text-[var(--win)]" : "text-[var(--loss)]"
-        )}
-      >
-        {value}
-      </div>
-      <div className="mt-0.5 text-[10px] text-muted-foreground">{sub}</div>
-    </div>
-  );
-}
-
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center">
-      <div className="text-sm font-medium">{title}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{body}</div>
-    </div>
-  );
-}
-
-function LoadingRows({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full" />
-      ))}
-    </div>
   );
 }
