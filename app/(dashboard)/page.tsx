@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { BankrollHero } from "@/components/daily-play/BankrollHero";
 import { WaveCard } from "@/components/daily-play/WaveCard";
+import { StrategyStatusPanel } from "@/components/daily-play/StrategyStatusPanel";
 import { localToday } from "@/lib/constants";
 import type { DailyPlan, WaveId } from "@/lib/sequencer";
 import { cn } from "@/lib/utils";
@@ -108,6 +109,8 @@ export default function HomePage() {
           </div>
 
           <SettledFeed settled={data.settled} />
+
+          <StrategyStatusPanel />
         </>
       ) : null}
     </div>
