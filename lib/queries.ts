@@ -296,9 +296,13 @@ export async function getSimilarSpots(strategy: string, confidence: number, rang
 // Excludes already-placed picks so the home page rotates through what's
 // left to decide on, not what's already decided.
 export async function getPicksBySport(date: string, sport: string) {
+  // Exclude same-game player props from the slate (feedback 2026-04-19).
+  // LEFT JOIN pick_rationales so picks without AI enrichment still render.
   return query(`
     SELECT sp.*,
            g.home_team_id, g.away_team_id, g.home_score, g.away_score,
+           pr.rationale, pr.risks_json, pr.confidence,
+           pr.confidence_adj, pr.one_liner, pr.ew_score, pr.ew_tier,
            CASE
              WHEN sp.edge > 0.04 AND sp.kelly_size > 0.01 THEN 'HIGH'
              WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 'MEDIUM'
@@ -306,11 +310,14 @@ export async function getPicksBySport(date: string, sport: string) {
            END as urgency
     FROM strategy_picks sp
     LEFT JOIN games g ON sp.game_id = g.game_id
+    LEFT JOIN pick_rationales pr ON pr.pick_id = sp.pick_id
     WHERE sp.game_date = $1 AND sp.sport = $2
+      AND sp.strategy NOT LIKE '%player%'
       AND NOT EXISTS (
           SELECT 1 FROM placed_bets pb WHERE pb.pick_id = sp.pick_id
       )
     ORDER BY
+      pr.ew_score DESC NULLS LAST,
       CASE
         WHEN sp.edge > 0.04 AND sp.kelly_size > 0.01 THEN 0
         WHEN sp.edge > 0.02 AND sp.kelly_size > 0.005 THEN 1

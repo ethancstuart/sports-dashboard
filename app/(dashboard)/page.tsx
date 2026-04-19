@@ -34,6 +34,14 @@ interface Pick {
   home_team_id: string | null;
   away_team_id: string | null;
   result: string | null;
+  // ── AI rationale / EW Score (from JOIN on pick_rationales) ──
+  rationale: string | null;
+  risks_json: string | null;
+  confidence: "low" | "medium" | "high" | null;
+  confidence_adj: number | null;
+  one_liner: string | null;
+  ew_score: number | null;
+  ew_tier: "BET" | "LEAN" | "WATCH" | null;
   [key: string]: unknown;
 }
 
@@ -227,34 +235,52 @@ function GameBlock({ matchup, picks }: { matchup: string; picks: Pick[] }) {
 }
 
 function PickRow({ pick }: { pick: Pick }) {
-  const tier = edgeTier(pick.edge);
+  // Prefer the server-computed EW tier (model edge × AI confidence × 30d WR).
+  // Falls back to raw-edge tier for picks not yet AI-enriched.
+  const tier: "BET" | "LEAN" | "WATCH" =
+    (pick.ew_tier as "BET" | "LEAN" | "WATCH" | null) ?? edgeTier(pick.edge);
   const instruction = betInstruction(
     pick.strategy,
     pick.bet_side,
     pick.home_team_id,
     pick.away_team_id
   );
+  const risks: string[] = (() => {
+    if (!pick.risks_json) return [];
+    try {
+      const parsed = JSON.parse(pick.risks_json);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
   return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "inline-flex min-w-[44px] items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-              TIER_STYLES[tier]
+    <li className="flex flex-col gap-2 px-4 py-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex min-w-[44px] items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                TIER_STYLES[tier]
+              )}
+            >
+              {tier}
+            </span>
+            {pick.ew_score != null && (
+              <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-foreground/80">
+                EW {Math.round(pick.ew_score)}
+              </span>
             )}
-          >
-            {tier}
-          </span>
-          <span className="truncate text-sm font-medium">{instruction}</span>
+            <span className="truncate text-sm font-medium">{instruction}</span>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {displayStrategy(pick.strategy)}
+            {pick.book_odds != null && ` · ${fmtOdds(pick.book_odds)}`}
+            {pick.kelly_size != null &&
+              ` · Kelly ${fmtPct(pick.kelly_size, 1)}`}
+          </div>
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          {displayStrategy(pick.strategy)}
-          {pick.book_odds != null && ` · ${fmtOdds(pick.book_odds)}`}
-          {pick.kelly_size != null &&
-            ` · Kelly ${fmtPct(pick.kelly_size, 1)}`}
-        </div>
-      </div>
       <div className="flex items-center gap-4 tabular-nums">
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -289,6 +315,54 @@ function PickRow({ pick }: { pick: Pick }) {
           disabled={pick.result != null}
         />
       </div>
+      </div>
+
+      {pick.rationale && (
+        <details className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+          <summary className="flex cursor-pointer items-center gap-2 select-none">
+            <span
+              className={cn(
+                "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                pick.confidence === "high"
+                  ? "bg-[var(--win)]/15 text-[var(--win)]"
+                  : pick.confidence === "low"
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-[var(--lean)]/15 text-[var(--lean)]"
+              )}
+            >
+              AI · {pick.confidence ?? "medium"}
+            </span>
+            {(pick.confidence_adj ?? 0) > 0 && (
+              <span className="inline-flex items-center rounded bg-[var(--win)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--win)]">
+                BOOST
+              </span>
+            )}
+            {(pick.confidence_adj ?? 0) < 0 && (
+              <span className="inline-flex items-center rounded bg-[var(--loss)]/15 px-1.5 py-0.5 text-[10px] font-bold text-[var(--loss)]">
+                FADE
+              </span>
+            )}
+            <span className="flex-1 truncate text-muted-foreground">
+              {pick.one_liner ?? "Rationale"}
+            </span>
+          </summary>
+          <div className="mt-2 space-y-1.5 text-foreground/90">
+            <p className="leading-relaxed">{pick.rationale}</p>
+            {risks.length > 0 && (
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lean)]">
+                  Risks
+                </div>
+                <ul className="ml-4 list-disc space-y-0.5 text-muted-foreground">
+                  {risks.slice(0, 3).map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
     </li>
   );
 }

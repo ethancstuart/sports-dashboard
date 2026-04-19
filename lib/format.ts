@@ -60,12 +60,14 @@ export function displayStrategy(strategy: string | null | undefined): string {
     mlb_spread: "MLB Run Line",
     nba_ml: "NBA Moneyline",
     nba_spread: "NBA Spread",
+    nba_total: "NBA Total",
     nba_total_over: "NBA Total — Over",
     nba_total_under: "NBA Total — Under",
     nba_1q_spread: "NBA Q1 Spread",
     nba_q1_spread: "NBA Q1 Spread",
     nba_1h_spread: "NBA 1H Spread",
     nba_h1_spread: "NBA 1H Spread",
+    nba_3q_spread: "NBA Q3 Spread",
     nba_first_10: "NBA First to 10",
     nba_first_to_10: "NBA First to 10",
     nba_first_20: "NBA First to 20",
@@ -76,12 +78,18 @@ export function displayStrategy(strategy: string | null | undefined): string {
     nba_player_rebounds: "NBA Player — Rebounds",
     nfl_ml: "NFL Moneyline",
     nfl_spread: "NFL Spread",
+    nfl_total: "NFL Total",
     nfl_totals: "NFL Total",
     nfl_total_over: "NFL Total — Over",
     nfl_total_under: "NFL Total — Under",
     nfl_q1_spread: "NFL Q1 Spread",
     nfl_h1_spread: "NFL 1H Spread",
     nfl_first_10: "NFL First to 10",
+    ncaaf_spread: "NCAAF Spread",
+    ncaaf_total: "NCAAF Total",
+    ncaab_spread: "NCAAB Spread",
+    ncaab_total: "NCAAB Total",
+    mlb_total: "MLB Total",
   };
   return map[strategy] ?? strategy.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -112,10 +120,19 @@ export function formatBet(
     case "nba_spread":
     case "nfl_spread":
     case "mlb_spread":
+    case "ncaaf_spread":
+    case "ncaab_spread":
       return team ? `${team} Spread` : "Spread";
     case "nba_totals":
     case "nfl_totals":
+    case "nba_total":
+    case "nfl_total":
+    case "ncaaf_total":
+    case "ncaab_total":
+    case "mlb_total":
       return side === "over" ? "Over" : side === "under" ? "Under" : "Total";
+    case "nba_3q_spread":
+      return team ? `${team} Q3` : "Q3 Spread";
     case "nba_1q_spread":
     case "nba_q1_spread":
       return team ? `${team} Q1` : "Q1 Spread";
