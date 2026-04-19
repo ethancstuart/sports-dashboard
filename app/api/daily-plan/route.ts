@@ -30,6 +30,7 @@ interface RawRow {
   ew_tier: string | null;
   home_team_id: string | null;
   away_team_id: string | null;
+  game_start_time_utc: string | null;
 }
 
 export async function GET(req: Request) {

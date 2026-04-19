@@ -41,6 +41,16 @@ export const SPORT_DEFAULT_SETTLE_HOUR: Record<string, number> = {
   ncaaf: 16,
 };
 
+// Sport-typical game length — added to start time to estimate settle.
+export const SPORT_GAME_LENGTH_HOURS: Record<string, number> = {
+  mlb: 3.0,
+  nba: 2.5,
+  nfl: 3.5,
+  nhl: 2.5,
+  ncaab: 2.0,
+  ncaaf: 3.5,
+};
+
 export const CURATED_MARKETS = new Set([
   "spread", "total", "ml", "moneyline",
   "1h_spread", "1h_total", "1q_spread", "1q_total", "3q_spread",
@@ -144,7 +154,23 @@ function dateInTz(planDate: string, hour: number, tz: string): Date {
   return new Date(utcAnchor.getTime() - offsetMs);
 }
 
-export function estimateSettleTime(gameDate: string, sport: string): Date {
+export function estimateSettleTime(
+  gameDate: string,
+  sport: string,
+  gameStartUtc: string | null = null,
+): Date {
+  if (gameStartUtc) {
+    try {
+      const start = new Date(gameStartUtc);
+      if (!isNaN(start.getTime())) {
+        const lengthHrs =
+          SPORT_GAME_LENGTH_HOURS[(sport || "").toLowerCase()] ?? 3.0;
+        return new Date(start.getTime() + lengthHrs * 60 * 60 * 1000);
+      }
+    } catch {
+      // fall through to default
+    }
+  }
   const hour = SPORT_DEFAULT_SETTLE_HOUR[(sport || "").toLowerCase()] ?? 22;
   return dateInTz(gameDate, hour, "America/New_York");
 }
@@ -187,6 +213,7 @@ interface RawPickRow {
   ew_tier: string | null;
   home_team_id: string | null;
   away_team_id: string | null;
+  game_start_time_utc: string | null;
 }
 
 /** Convert a DB row into a SequencerPick + filter out non-curated markets. */
@@ -204,7 +231,11 @@ export function buildPickFromRow(row: RawPickRow): SequencerPick | null {
     book_line: row.book_line,
     book_odds: row.book_odds ?? -110,
     game_date: row.game_date,
-    estimated_settle_iso: estimateSettleTime(row.game_date, row.sport ?? "").toISOString(),
+    estimated_settle_iso: estimateSettleTime(
+      row.game_date,
+      row.sport ?? "",
+      row.game_start_time_utc ?? null,
+    ).toISOString(),
     confidence: classifyConfidence(edge),
     market_type: marketType,
     rationale: (row.one_liner ?? "").trim(),

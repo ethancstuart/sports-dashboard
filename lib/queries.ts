@@ -404,12 +404,16 @@ export async function getRetrainMetrics(limit: number = 10) {
 // Mirrors getPicksBySport but cross-sport. Drops props at SQL level so the
 // TS sequencer's curated-market filter is a belt-and-suspenders second pass.
 export async function getDailyPlanPicks(date: string) {
+  // Note: pr.pick_id JOIN can miss because Postgres SERIAL doesn't preserve
+  // SQLite IDs for newer picks. Dashboard renders fallback rationale in that
+  // case; the email surface (Python, reads SQLite directly) is canonical for
+  // the AI one-liner. game_start_time_utc IS preserved by direct UPDATEs.
   return query(`
     SELECT sp.pick_id, sp.sport, sp.strategy, sp.game_id, sp.bet_side,
            sp.edge, sp.book_line, COALESCE(sp.book_odds, -110) AS book_odds,
            sp.game_date,
            pr.one_liner, pr.ew_tier,
-           g.home_team_id, g.away_team_id
+           g.home_team_id, g.away_team_id, g.game_start_time_utc
       FROM strategy_picks sp
       LEFT JOIN games g ON sp.game_id = g.game_id
       LEFT JOIN pick_rationales pr ON pr.pick_id = sp.pick_id
