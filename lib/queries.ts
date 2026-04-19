@@ -400,6 +400,53 @@ export async function getRetrainMetrics(limit: number = 10) {
   }
 }
 
+// ── Daily Play: today's curated picks for the wave sequencer ──
+// Mirrors getPicksBySport but cross-sport. Drops props at SQL level so the
+// TS sequencer's curated-market filter is a belt-and-suspenders second pass.
+export async function getDailyPlanPicks(date: string) {
+  return query(`
+    SELECT sp.pick_id, sp.sport, sp.strategy, sp.game_id, sp.bet_side,
+           sp.edge, sp.book_line, COALESCE(sp.book_odds, -110) AS book_odds,
+           sp.game_date,
+           pr.one_liner, pr.ew_tier,
+           g.home_team_id, g.away_team_id
+      FROM strategy_picks sp
+      LEFT JOIN games g ON sp.game_id = g.game_id
+      LEFT JOIN pick_rationales pr ON pr.pick_id = sp.pick_id
+     WHERE sp.game_date = $1
+       AND sp.result IS NULL
+       AND sp.edge IS NOT NULL
+       AND sp.strategy NOT LIKE '%player%'
+       AND sp.strategy NOT LIKE '%prop%'
+  `, [date]);
+}
+
+// ── Daily Play: realized PnL today (for live bankroll calc) ──
+export async function getRealizedPnlUnits(date: string) {
+  const row = await queryOne<{ total: number }>(`
+    SELECT COALESCE(SUM(pnl), 0)::float AS total
+      FROM strategy_picks
+     WHERE game_date = $1
+       AND result IS NOT NULL
+       AND pnl IS NOT NULL
+  `, [date]);
+  return row?.total ?? 0;
+}
+
+// ── Daily Play: today's settled picks (for the "history" feed below the hero) ──
+export async function getDailyPlanSettled(date: string) {
+  return query(`
+    SELECT sp.pick_id, sp.sport, sp.strategy, sp.game_id, sp.bet_side,
+           sp.edge, sp.book_line, sp.book_odds, sp.result, sp.pnl, sp.settled_at,
+           g.home_team_id, g.away_team_id
+      FROM strategy_picks sp
+      LEFT JOIN games g ON sp.game_id = g.game_id
+     WHERE sp.game_date = $1
+       AND sp.result IS NOT NULL
+     ORDER BY sp.settled_at DESC NULLS LAST
+  `, [date]);
+}
+
 // ── Live: today's open picks ──
 export async function getTodaysOpenPicks(today: string) {
   return query(`

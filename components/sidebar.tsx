@@ -13,13 +13,15 @@ import {
   Terminal,
   Sparkles,
   NotebookPen,
+  FlaskConical,
   Menu,
   X,
 } from "lucide-react";
 import { useState } from "react";
 
 const NAV = [
-  { href: "/", label: "Today", icon: LayoutDashboard },
+  { href: "/", label: "Daily Play", icon: LayoutDashboard },
+  { href: "/lab", label: "Lab", icon: FlaskConical },
   { href: "/live", label: "Live", icon: Radio },
   { href: "/placements", label: "My Bets", icon: NotebookPen },
   { href: "/analyze", label: "Analyze", icon: Sparkles },
