@@ -420,6 +420,11 @@ export async function getDailyPlanPicks(date: string) {
      WHERE sp.game_date = $1
        AND sp.result IS NULL
        AND sp.edge IS NOT NULL
+       AND sp.book_odds IS NOT NULL
+       -- Odds integrity: drop picks with default -110 stamp + NULL line.
+       -- Mirrors src/sequencer.py _load_open_picks filter so dashboard
+       -- shows same picks as the morning email.
+       AND NOT (sp.book_odds = -110 AND sp.book_line IS NULL)
        AND sp.strategy NOT LIKE '%player%'
        AND sp.strategy NOT LIKE '%prop%'
        AND NOT EXISTS (
