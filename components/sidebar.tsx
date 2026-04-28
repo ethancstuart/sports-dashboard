@@ -14,6 +14,7 @@ import {
   Sparkles,
   NotebookPen,
   FlaskConical,
+  Bot,
   Menu,
   X,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/live", label: "Live", icon: Radio },
   { href: "/placements", label: "My Bets", icon: NotebookPen },
   { href: "/analyze", label: "Analyze", icon: Sparkles },
+  { href: "/claude", label: "Claude Handicapper", icon: Bot },
   { href: "/audit", label: "Prediction Audit", icon: Search },
   { href: "/models", label: "Model Registry", icon: Cpu },
   { href: "/data", label: "Data Observatory", icon: Database },
