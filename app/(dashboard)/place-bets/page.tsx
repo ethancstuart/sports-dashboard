@@ -53,7 +53,11 @@ export default function PlaceBetsPage() {
   const [states, setStates] = useState<Record<number, PlacementState>>({});
   const [err, setErr] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [bankroll, setBankroll] = useState<number | null>(null);
+  // bankroll surface placeholder — kept as state so a future revision can
+  // wire the trust-score / Kelly-sizing display back in without re-adding
+  // the field. Suppress the unused-vars rule rather than delete state.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_bankroll, _setBankroll] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);

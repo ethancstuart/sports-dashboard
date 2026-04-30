@@ -433,7 +433,7 @@ export default function ClaudeHandicapperPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between">
-            <span>Claude's track record</span>
+            <span>Claude&apos;s track record</span>
             {recent?.summary && recent.summary.n_settled > 0 && (
               <span className="text-xs font-normal text-zinc-400">
                 {recent.summary.wins}-{recent.summary.losses} (

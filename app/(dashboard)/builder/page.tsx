@@ -18,13 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Wrench,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Sparkles,
-} from "lucide-react";
+import { Wrench, CheckCircle2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ─────── Types ─────── */
