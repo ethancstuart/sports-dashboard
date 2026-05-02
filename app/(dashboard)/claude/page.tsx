@@ -138,12 +138,24 @@ function confidenceIcon(c: string) {
 
 /* ───────── Page ───────── */
 
+type Mode = "slate" | "freeform";
+
 export default function ClaudeHandicapperPage() {
+  const [mode, setMode] = useState<Mode>("freeform");
+
   const [sport, setSport] = useState("mlb");
   const [gameId, setGameId] = useState("");
   const [market, setMarket] = useState("ml");
   const [side, setSide] = useState<string>("");
   const [effort, setEffort] = useState<string>("high");
+
+  // Freeform-only fields
+  const [awayTeam, setAwayTeam] = useState("");
+  const [homeTeam, setHomeTeam] = useState("");
+  const [line, setLine] = useState<string>("");
+  const [odds, setOdds] = useState<string>("");
+  const [gameDate, setGameDate] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,22 +195,68 @@ export default function ClaudeHandicapperPage() {
   }, []);
 
   async function handleSubmit() {
-    if (!gameId.trim()) {
-      setError("Game ID is required");
-      return;
-    }
     setError(null);
     setResult(null);
+
+    if (mode === "slate") {
+      if (!gameId.trim()) {
+        setError("Game ID is required for slate mode");
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await fetch("/api/claude_pick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sport,
+            game_id: gameId.trim(),
+            market,
+            side: side || null,
+            effort,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          setError(body.error || `Backend returned ${res.status}`);
+        } else {
+          setResult(body as ClaudePickResult);
+          loadRecent();
+        }
+      } catch (e) {
+        setError(`Request failed: ${e}`);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Freeform mode
+    if (!awayTeam.trim() || !homeTeam.trim()) {
+      setError("Both away and home team are required for freeform mode");
+      return;
+    }
+    if (!odds.trim()) {
+      setError(
+        "Odds are required (e.g. -110 or +145) — that's the price you're being offered"
+      );
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch("/api/claude_pick", {
+      const res = await fetch("/api/claude_pick_freeform", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sport,
-          game_id: gameId.trim(),
+          away_team: awayTeam.trim(),
+          home_team: homeTeam.trim(),
           market,
+          line: line.trim() === "" ? null : Number(line),
+          odds: Number(odds),
           side: side || null,
+          game_date: gameDate.trim() || null,
+          notes: notes.trim() || null,
           effort,
         }),
       });
@@ -230,13 +288,54 @@ export default function ClaudeHandicapperPage() {
         </p>
       </div>
 
+      {/* Mode toggle */}
+      <div className="inline-flex rounded-md border border-zinc-800 bg-zinc-950 p-1 text-xs">
+        <button
+          type="button"
+          onClick={() => setMode("freeform")}
+          className={cn(
+            "px-3 py-1.5 rounded-sm font-mono uppercase tracking-wider transition-colors",
+            mode === "freeform"
+              ? "bg-amber-500 text-zinc-950"
+              : "text-zinc-400 hover:text-zinc-200"
+          )}
+        >
+          Freeform
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("slate")}
+          className={cn(
+            "px-3 py-1.5 rounded-sm font-mono uppercase tracking-wider transition-colors",
+            mode === "slate"
+              ? "bg-amber-500 text-zinc-950"
+              : "text-zinc-400 hover:text-zinc-200"
+          )}
+        >
+          From Slate (game_id)
+        </button>
+      </div>
+
       {/* Form */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Request a recommendation</CardTitle>
+          <CardTitle className="text-base">
+            {mode === "freeform"
+              ? "Type any matchup, line, and odds"
+              : "Request a recommendation from a known game"}
+          </CardTitle>
+          {mode === "freeform" && (
+            <p className="text-xs text-zinc-500 pt-1">
+              The AI uses your matchup + the data layer (Elo, recent form, cached
+              model preds when teams are recognized) and reasons against the price
+              you supply. Works for any sport, any book, any time — no game_id
+              needed.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Common: Sport */}
             <div className="space-y-1">
               <Label>Sport</Label>
               <Select value={sport} onValueChange={(v) => v && setSport(v)}>
@@ -253,15 +352,38 @@ export default function ClaudeHandicapperPage() {
               </Select>
             </div>
 
-            <div className="space-y-1">
-              <Label>Game ID</Label>
-              <Input
-                placeholder="e.g. 824203"
-                value={gameId}
-                onChange={(e) => setGameId(e.target.value)}
-              />
-            </div>
+            {/* Mode-specific: matchup vs game_id */}
+            {mode === "freeform" ? (
+              <>
+                <div className="space-y-1">
+                  <Label>Away team</Label>
+                  <Input
+                    placeholder="e.g. LAL or Lakers"
+                    value={awayTeam}
+                    onChange={(e) => setAwayTeam(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Home team</Label>
+                  <Input
+                    placeholder="e.g. BOS or Celtics"
+                    value={homeTeam}
+                    onChange={(e) => setHomeTeam(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1 md:col-span-2">
+                <Label>Game ID</Label>
+                <Input
+                  placeholder="e.g. 824203 — from the games table / today's slate"
+                  value={gameId}
+                  onChange={(e) => setGameId(e.target.value)}
+                />
+              </div>
+            )}
 
+            {/* Common: Market */}
             <div className="space-y-1">
               <Label>Market</Label>
               <Select value={market} onValueChange={(v) => v && setMarket(v)}>
@@ -278,6 +400,43 @@ export default function ClaudeHandicapperPage() {
               </Select>
             </div>
 
+            {/* Freeform-only: line + odds */}
+            {mode === "freeform" && (
+              <>
+                <div className="space-y-1">
+                  <Label>
+                    Line{" "}
+                    <span className="text-zinc-500 text-[10px]">
+                      (blank for moneyline)
+                    </span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    placeholder="e.g. -6.5 or 8.5"
+                    value={line}
+                    onChange={(e) => setLine(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>
+                    Odds{" "}
+                    <span className="text-amber-500 text-[10px]">
+                      (American, required)
+                    </span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    placeholder="e.g. -110 or +145"
+                    value={odds}
+                    onChange={(e) => setOdds(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Common: Side */}
             <div className="space-y-1">
               <Label>Side (optional)</Label>
               <Select
@@ -297,6 +456,7 @@ export default function ClaudeHandicapperPage() {
               </Select>
             </div>
 
+            {/* Common: Effort */}
             <div className="space-y-1">
               <Label>Effort</Label>
               <Select value={effort} onValueChange={(v) => v && setEffort(v)}>
@@ -313,16 +473,55 @@ export default function ClaudeHandicapperPage() {
               </Select>
             </div>
 
+            {/* Freeform-only: optional date */}
+            {mode === "freeform" && (
+              <div className="space-y-1">
+                <Label>
+                  Game date{" "}
+                  <span className="text-zinc-500 text-[10px]">(optional)</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={gameDate}
+                  onChange={(e) => setGameDate(e.target.value)}
+                />
+              </div>
+            )}
+
             <div className="flex items-end">
               <Button
                 onClick={handleSubmit}
-                disabled={loading || !gameId.trim()}
+                disabled={
+                  loading ||
+                  (mode === "slate"
+                    ? !gameId.trim()
+                    : !awayTeam.trim() || !homeTeam.trim() || !odds.trim())
+                }
                 className="w-full"
               >
                 {loading ? "Asking Claude..." : "Get recommendation"}
               </Button>
             </div>
           </div>
+
+          {/* Freeform-only: notes textarea (full-width) */}
+          {mode === "freeform" && (
+            <div className="space-y-1">
+              <Label>
+                Notes{" "}
+                <span className="text-zinc-500 text-[10px]">
+                  (optional — injuries, weather, anything Claude should weigh)
+                </span>
+              </Label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Mahomes ankle questionable; Allen healthy; 25mph wind crosswind at Highmark"
+                rows={3}
+                className="w-full resize-y rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600 focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded-md bg-red-950 border border-red-900 px-3 py-2 text-sm text-red-200">
