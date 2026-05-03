@@ -93,11 +93,22 @@ async function step3_freeform_post() {
     odds: -110,
     effort: "low",
   };
-  const r = await fetch(`${BASE}/api/claude_pick_freeform`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookieJar },
-    body: JSON.stringify(body),
-  });
+  // Retry once on 502/503 — Fly.io redeploy windows are typically <30s
+  // and surface as a 502 from the Next.js proxy. A successful smoke
+  // post-redeploy is what we want to verify, not the deploy gap itself.
+  let r;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    r = await fetch(`${BASE}/api/claude_pick_freeform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookieJar },
+      body: JSON.stringify(body),
+    });
+    if (r.ok || (r.status !== 502 && r.status !== 503)) break;
+    if (attempt === 1) {
+      console.log(`  retry: got ${r.status}, waiting 20s for backend...`);
+      await new Promise((res) => setTimeout(res, 20_000));
+    }
+  }
   if (!r.ok) {
     const text = await r.text().catch(() => "");
     fail(`freeform proxy ${r.status}: ${text.slice(0, 300)}`);
